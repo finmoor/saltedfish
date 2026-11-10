@@ -229,4 +229,7 @@ test('管理页的更新提示：能自己更新的扩展点按钮，旧扩展�
   assert.match(identity.extensionUpdateInstruction({ ...profile, version: '0.3.7' }, release), /工具栏.*更新/);
   assert.equal(identity.extensionUpdateInstruction({ ...profile, version: '0.3.6', capabilities: [] }, release), identity.extensionRefreshInstruction);
   assert.match(identity.extensionRefreshInstruction, /下载新的扩展包/);
+  // 应用商店版没有“更新”按钮，也不该叫用户覆盖文件夹（商店装的文件夹改了会被 Chrome 判成已损坏）
+  const store = identity.extensionUpdateInstruction({ ...profile, version: '0.3.7', capabilities: ['store-build'] }, release);
+  assert.match(store, /应用商店/); assert.doesNotMatch(store, /工具栏|覆盖/);
 });

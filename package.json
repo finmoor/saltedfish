@@ -59,6 +59,7 @@
     "test:npm": "node --import tsx --test tests/npm-package.integration.ts",
     "release:npm": "node scripts/promote-npm.mjs",
     "package:extension": "npm run build && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1",
+    "package:extension-store": "npm run build && node scripts/build-extension.mjs --store && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1 -Store",
     "test:styled-controls": "node --import tsx --test tests/styled-controls.integration.ts",
     "verify:release": "node scripts/verify-release.mjs"
   },

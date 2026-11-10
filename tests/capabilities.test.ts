@@ -36,7 +36,8 @@ test('握手线上内容保持：服务公布的能力与此前版本逐项相�
 
 test('真实扩展后台使用这张表，自己不再手写能力字符串', async () => {
   const source = await read('extension/background.ts');
-  assert.ok(source.includes('EXTENSION_CAPABILITIES') && source.includes('EXTENSION_REQUIRES_SERVER'));
+  // 商店版和默认版的声明都由 shared.ts 的 extensionCapabilities 从 EXTENSION_CAPABILITIES 算出
+  assert.ok(source.includes('extensionCapabilities(STORE_BUILD)') && source.includes('EXTENSION_REQUIRES_SERVER'));
   for (const name of all) assert.ok(!source.includes(`'${name}'`) && !source.includes(`"${name}"`), `background.ts 不应手写 '${name}'`);
 });
 

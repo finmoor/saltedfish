@@ -1,5 +1,6 @@
 import { execute, detachAll, attachEvents, isTabBusy, hasActiveOperations, cancelOperations, setAdminOrigins, setCursorShown, setHumanInput } from './executor';
-import { BrowserError, errorInfo, adminOrigins, EXTENSION_CAPABILITIES, EXTENSION_REQUIRES_SERVER, type JsonObject, type WireCommand } from '../src/shared';
+import { BrowserError, errorInfo, adminOrigins, extensionCapabilities, EXTENSION_REQUIRES_SERVER, type JsonObject, type WireCommand } from '../src/shared';
+import { STORE_BUILD } from './build-target';
 import { BridgeHandshake, extensionUpdateProof, newNonce, sameProof } from './bridge-auth';
 import {serviceAddress,bridgeAddress} from '../src/service-address';
 import {isNewerVersion} from '../ui/extension-version.js';
@@ -28,7 +29,7 @@ let connectedService:{serviceId?:string;canManage:boolean;extensionRelease?:{ver
 const bridges = new WeakMap<WebSocket, BridgeHandshake>();
 const activities = new Map<string, { operation: string; tabId?: number; startedAt: string }>();
 async function updateActivity() {
-  const config = await settings(), release = connectedService.extensionRelease, updateReady = status.state === 'connected' && !!release && isNewerVersion(release.version, chrome.runtime.getManifest().version);
+  const config = await settings(), release = connectedService.extensionRelease, updateReady = !STORE_BUILD && status.state === 'connected' && !!release && isNewerVersion(release.version, chrome.runtime.getManifest().version);
   await chrome.action.setBadgeText({ text: !config.enabled ? 'OFF' : activities.size ? String(activities.size) : updateReady ? 'NEW' : status.state === 'connected' ? 'ON' : '' });
   await chrome.action.setBadgeBackgroundColor({ color: activities.size ? '#be6225' : '#147d64' });
   await chrome.action.setTitle({ title: `${config.label} · ${activities.size ? `${activities.size} 个操作进行中` : updateReady ? `有新版本 ${release.versionName}，点开更新` : status.message || status.state}` });
@@ -133,7 +134,7 @@ async function connect(): Promise<void> {
     const account = await signedInAccount();
     const current = new WebSocket(bridgeAddress(address(config)));
     socket = current;
-    const bridge = new BridgeHandshake(config.token, { id: config.profileId, label: config.label, instanceId, version: chrome.runtime.getManifest().version, codeVersion: VERSION, userAgent: navigator.userAgent, capabilities: [...EXTENSION_CAPABILITIES], ...(account ? { account } : {}) },undefined,config.pairingId);
+    const bridge = new BridgeHandshake(config.token, { id: config.profileId, label: config.label, instanceId, version: chrome.runtime.getManifest().version, codeVersion: VERSION, userAgent: navigator.userAgent, capabilities: extensionCapabilities(STORE_BUILD), ...(account ? { account } : {}) },undefined,config.pairingId);
     bridges.set(current, bridge);
     handshake = setTimeout(() => { if (socket === current && status.state !== 'connected') current.close(); }, 8000);
     current.onopen = () => current.send(bridge.hello());
@@ -252,6 +253,7 @@ chrome.runtime.onMessage.addListener((message: JsonObject, sender, respond) => {
       if((await settings()).profileId!==config.profileId||address(await settings())!==address(config))throw new Error('连接已变化，请稍后重试。');return await response.json();
     }
     if(message.type==='extension.update.offer'){
+      if(STORE_BUILD)throw new Error('应用商店版由 Chrome 自动更新。');
       const config=await settings();if(status.state!=='connected')throw new Error('连上服务后才能更新。');if(activities.size||hasActiveOperations())throw new Error('Agent 正在操作，结束后再更新。');
       const nonce=newNonce(),base=address(config),url=new URL(base+'/extension/update');url.searchParams.set('profileId',config.profileId);url.searchParams.set('instanceId',instanceId);url.searchParams.set('nonce',nonce);if(config.pairingId)url.searchParams.set('pairingId',config.pairingId);
       const response=await fetch(url,{headers:{authorization:'Bearer '+config.token},redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000)});
@@ -267,6 +269,7 @@ chrome.runtime.onMessage.addListener((message: JsonObject, sender, respond) => {
       return{released:ended.length>0};
     }
     if(message.type==='extension.update.restart'){
+      if(STORE_BUILD)throw new Error('应用商店版由 Chrome 自动更新。');
       if(activities.size||hasActiveOperations())throw new Error('Agent 正在操作，结束后再重新加载。');
       await chrome.storage.local.set({selfUpdate:{from:chrome.runtime.getManifest().version}});
       setTimeout(()=>chrome.runtime.reload(),100);return{restarting:true};

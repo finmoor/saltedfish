@@ -8,7 +8,7 @@ import {withManagementMutex} from './management-lock.js';
 import {windowsDesktopRegistry,type DesktopEntry,type DesktopRegistry,type RegistryTree} from './desktop-registration.js';
 
 type NativeConfig=Pick<Config,'dataDir'|'port'>;
-export interface NativeSettingsRegistrationOptions {platform?:NodeJS.Platform;registry?:DesktopRegistry;binary?:string;registryRoot?:string;extensionDirs?:string[];extensionSource?:string;validateOnly?:boolean}
+export interface NativeSettingsRegistrationOptions {platform?:NodeJS.Platform;registry?:DesktopRegistry;binary?:string;registryRoot?:string;extensionDirs?:string[];extensionSource?:string;validateOnly?:boolean;storeExtensionIds?:readonly string[]}
 const digest=(value:Buffer|string)=>createHash('sha256').update(value).digest('hex');
 const Hash=z.string().regex(/^[a-f0-9]{64}$/);
 const Entry=z.object({command:z.string().min(1).max(32768),args:z.array(z.string().max(32768)).max(8)}).strict();
@@ -23,6 +23,11 @@ const files=(config:NativeConfig)=>{const folder=path.join(path.resolve(config.d
 const text=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
 const readOptional=async(file:string)=>readFile(file).catch(error=>{if(error.code==='ENOENT')return undefined;throw error;});
 async function atomic(file:string,value:Buffer|string){const temporary=file+'.'+randomUUID()+'.tmp';try{await writeFile(temporary,value,{flag:'wx',mode:0o600});for(let attempt=0;;attempt++)try{await rename(temporary,file);break;}catch(error){if(attempt===5||!['EPERM','EACCES','EBUSY'].includes((error as NodeJS.ErrnoException).code||''))throw error;await new Promise(resolve=>setTimeout(resolve,20*2**attempt));}}finally{await rm(temporary,{force:true});}}
+
+// Chrome 应用商店版扩展的 ID（商店分配、固定，只有商店发布的包能用这个 ID，所以不用像已解压的扩展那样核对文件）。
+// 第一次把商店版上传到开发者后台后填进来，Windows 本机设置入口和文件助手才认它。
+export const STORE_EXTENSION_IDS:readonly string[]=[];
+export function storeExtensionOrigin(id:string){if(!/^[a-p]{32}$/.test(id))throw new Error('应用商店扩展 ID 无效。');return `chrome-extension://${id}/`;}
 
 // Chromium GenerateIdForPath: Windows FilePath 的 UTF-16 字节；仅统一盘符大小写。
 // https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/id_util.cc
@@ -75,7 +80,7 @@ export async function registerNativeSettings(config:NativeConfig,entry:DesktopEn
     const previous=new Map<string,Buffer|undefined>();for(const file of[c.runner,c.descriptor,c.manifest,c.record])previous.set(file,await readOptional(file));
     if(!saved&&[c.runner,c.descriptor,c.manifest].some(file=>previous.get(file)))throw new Error('本机通信文件已有其他内容，未覆盖。');
     if(saved)for(const[file,hash]of [[c.runner,saved.runnerSha256],[c.descriptor,saved.descriptorSha256],[c.manifest,saved.manifestSha256]])if(previous.get(file!)&&digest(previous.get(file!)!)!==hash)throw new Error('本机通信文件已被修改，未覆盖。');
-    const extensions=await trustedExtensions(config,saved,options),allowedOrigins=[...new Set(extensions.map(value=>unpackedExtensionOrigin(value.directory)))].sort();
+    const extensions=await trustedExtensions(config,saved,options),allowedOrigins=[...new Set([...extensions.map(value=>unpackedExtensionOrigin(value.directory)),...(options.storeExtensionIds??STORE_EXTENSION_IDS).map(storeExtensionOrigin)])].sort();
     const binary=await readFile(options.binary??path.join(projectDir,'dist/native-settings/SaltedFish.NativeSettings.exe'));
     const descriptor=text({product:'saltedfish-native-settings',port:config.port,dataDir:path.resolve(config.dataDir),command:entry.command,args:entry.args,allowedOrigins});
     const manifest=text({name:nativeSettingsHostName(config.port),description:'SaltedFish settings',path:c.runner,type:'stdio',allowed_origins:allowedOrigins});

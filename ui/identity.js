@@ -63,6 +63,7 @@ export const extensionRefreshInstruction = '扩展需要更新。下载新的扩
  */
 export function extensionUpdateInstruction(profile, release) {
   if (!profile.online || !profile.version || !release || !isNewerVersion(release.version, profile.version)) return '';
+  if (profile.capabilities?.includes('store-build')) return '有新版本的扩展。这个浏览器装的是 Chrome 应用商店版，商店会自动更新；要马上更新，到 chrome://extensions 打开开发者模式，点“更新”。';
   return profile.capabilities?.includes('self-update-v1') ? '有新版本的扩展。点这个 Chrome 工具栏上的 SaltedFish 图标，再点“更新”。' : extensionRefreshInstruction;
 }
 

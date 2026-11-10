@@ -10,6 +10,7 @@ import {parseBrowserConnection} from '../src/browser-connection';
 import {loopbackAddress,privateAddress} from '../src/service-address';
 import {reachable} from './service-probe';
 import {filesUpdated,updateExtension,UpdateError} from './self-update';
+import {STORE_BUILD} from './build-target';
 import {isNewerVersion} from '../ui/extension-version.js';
 
 let agentsRevision = 0;
@@ -152,6 +153,8 @@ function reportUpdate(text:string,failed=false){updateResult.dataset.error=Strin
 // 只有服务带的扩展比当前新才显示；更新结束后设置页会被重载关掉，#updated 是后台重新打开的那一页。
 async function refreshUpdate(response:{service?:{extensionRelease?:{version:string;versionName:string}};activities?:unknown[]}){
   const release=response.service?.extensionRelease;
+  // 应用商店版由商店更新，这里不提示，也没有“更新”按钮。
+  if(STORE_BUILD){updateStrip.hidden=true;return;}
   if(!release||!isNewerVersion(release.version,chrome.runtime.getManifest().version)){
     if(globalThis.location?.hash==='#updated'){updateStrip.hidden=false;updateTitle.textContent='已更新到 '+chrome.runtime.getManifest().version_name;updateDetail.textContent='配对和设置都保留了，Agent 重连后就能继续用。';updateButton.hidden=true;}
     else updateStrip.hidden=true;

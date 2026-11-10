@@ -194,6 +194,7 @@ export const CAPABILITY = {
   interactionV9:'interaction-v9',
   interactionV10:'interaction-v10',
   initScriptV1:'init-script-v1',
+  storeBuild:'store-build',
 } as const;
 export type Capability = typeof CAPABILITY[keyof typeof CAPABILITY];
 const C = CAPABILITY;
@@ -210,6 +211,8 @@ const C = CAPABILITY;
 // init-script-v1：navigate、new_tab 的 initScript（新文档加载前在主世界执行的脚本）。旧扩展会忽略它照常导航，钩子没装上调用方也不知道，所以用到时才要求。
 // evaluate-v2：evaluate 支持 replMode。screenshot-v2：元素截图和 clip。downloads-v2：下载带来源标签页、等标签页的下一次下载、按站点设置自动下载。tab-keep-v1：标签页不被自动丢弃。旧扩展会忽略这些参数照旧执行或不认识操作，所以只在请求用到时才要求。
 export const EXTENSION_CAPABILITIES: readonly Capability[] = [C.semanticLocators, C.structuredWait, C.popupWait, C.pauseControl, C.activity, C.dialogControl, C.elementStateV2, C.frameCoordinatesV2, C.executionV3, C.interactionV4, C.interactionV5, C.adminOriginV1, C.interactionV6, C.interactionV7,C.fileContentV1,C.browserFileReadV1, C.readOnlyEvalV1, C.selfUpdateV1, C.tabGroupsV1, C.evaluateV2, C.screenshotV2, C.downloadsV2, C.tabKeepV1, C.interactionV8, C.sitePermissionV2, C.screenshotV3, C.interactionV9, C.initScriptV1, C.interactionV10];
+// Chrome 应用商店版（extension/build-target.ts）由商店更新：不声明 self-update-v1，改声明 store-build，管理页据此提示从应用商店更新。数量不变，旧服务也接受（只校验字符串和个数）。
+export function extensionCapabilities(store:boolean):Capability[]{return store?[...EXTENSION_CAPABILITIES.filter(item=>item!==C.selfUpdateV1),C.storeBuild]:[...EXTENSION_CAPABILITIES];}
 // 扩展要求服务具备的能力：缺任何一项，扩展拒绝执行动作（SERVICE_UPDATE_REQUIRED）。
 export const EXTENSION_REQUIRES_SERVER: readonly Capability[] = [C.executionV3, C.interactionV4, C.interactionV5, C.adminOriginV1];
 // 服务在 ready 帧里公布的能力。execution-v2 在仓库内已没有消费方，保留是为了更早的扩展构建仍能连上。

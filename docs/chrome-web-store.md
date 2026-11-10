@@ -2,12 +2,24 @@
 
 上架前要做的事、商店表单里要填的内容。商店审核对 `debugger` 权限和 `<all_urls>` 会做深度审查，说明要具体。
 
-## 提交前必须改的代码
+## 商店版构建
 
-1. **商店版关掉一键更新。** 一键更新会从已配对的服务下载扩展文件，写进扩展自己的文件夹再重载（`extension/self-update.ts`）。商店禁止扩展执行远程获取的代码，商店安装的扩展还有内容校验，文件被改就会被 Chrome 判成已损坏。商店版由商店更新：构建时区分商店版，去掉设置页的“更新”按钮和对应的消息处理，服务端也不要向商店版推更新提示。
-2. **Windows 设置入口认商店版的扩展 ID。** Native Messaging 的 `allowed_origins` 现在按“加载已解压的扩展程序”的文件夹路径算扩展 ID（`src/native-settings-registration.ts` 的 `unpackedExtensionOrigin`）。商店版 ID 固定，要能登记它。
-3. **扩展 ZIP 里的 `pairing.json`。** 管理页下载的 ZIP 带服务地址；商店版没有这个文件，首次打开时在设置页填服务地址（设置页已经有这个输入框），确认流程走得通。
-4. **英文名称和描述。** `manifest.json` 现在只有中文。加 `default_locale` 和 `_locales/{zh_CN,en}/messages.json`，商店和 `chrome://extensions` 才会按语言显示。
+商店版和“加载已解压的扩展程序”的版本用同一份源码，构建时用开关区分：
+
+```sh
+npm run package:extension-store
+```
+
+它先照常构建，再用 `node scripts/build-extension.mjs --store` 构建到 `dist/extension-store`，打包成 `release/saltedfish-extension-store-<版本>.zip`，上传到开发者后台的就是这个文件。商店版和默认版的区别：
+
+- **没有一键更新。** 一键更新会从已配对的服务下载扩展文件，写进扩展自己的文件夹再重载（`extension/self-update.ts`）。商店禁止扩展执行远程获取的代码，商店安装的扩展还有内容校验，文件被改会被 Chrome 判成已损坏。商店版构建时 `extension/build-target.ts` 换成 `STORE_BUILD=true`，`self-update.ts` 换成 `self-update-store.ts`：设置页没有“更新”按钮，后台不响应更新消息，工具栏不显示 NEW。构建和打包都会检查产物里没有写文件夹的代码。
+- **声明 `store-build` 代替 `self-update-v1`。** 管理页据此提示“商店会自动更新”，不再叫用户覆盖文件夹。
+- **不带服务地址。** 管理页下载的 ZIP 带服务地址；商店版首次打开时在设置页填服务地址。
+
+## 上架前还要做的
+
+1. **登记商店分配的扩展 ID。** Windows 本机设置入口和文件助手（Native Messaging）只认允许名单里的扩展。“加载已解压的扩展程序”的 ID 按文件夹路径算；商店版的 ID 在第一次把 ZIP 上传到开发者后台时分配（存成草稿就有），拿到后填进 `src/native-settings-registration.ts` 的 `STORE_EXTENSION_IDS`，随下一版服务发布。没填之前商店版照样能用，只是在 Windows 上点“打开管理页”会走登录页，不能直接进入。
+2. **英文名称和描述。** `manifest.json` 现在只有中文。加 `default_locale` 和 `_locales/{zh_CN,en}/messages.json`，商店和 `chrome://extensions` 才会按语言显示。
 
 ## 单一用途
 

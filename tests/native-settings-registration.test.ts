@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {testDirectory} from './helpers.js';
 import {windowsDesktopRegistry,type DesktopRegistry,type RegistryTree} from '../src/desktop-registration.js';
-import {registerNativeSettings,unregisterNativeSettings,nativeSettingsReady,nativeSettingsRegistryRoot,nativeSettingsRegistryTree,unpackedExtensionOrigin} from '../src/native-settings-registration.js';
+import {registerNativeSettings,unregisterNativeSettings,nativeSettingsReady,nativeSettingsRegistryRoot,nativeSettingsRegistryTree,unpackedExtensionOrigin,storeExtensionOrigin,STORE_EXTENSION_IDS} from '../src/native-settings-registration.js';
 
 class Registry implements DesktopRegistry {
   entries=new Map<string,RegistryTree>();writes=0;failure=false;
@@ -69,4 +69,12 @@ test('Native真实注册与PowerShell卸载只写隔离树、校验外来项并�
   const env={...process.env,SALTEDFISH_TEST_COMMON:path.resolve('packaging/common.ps1'),SALTEDFISH_TEST_DATA:f.config.dataDir},run=async(suffix:string)=>promisify(execFile)('powershell.exe',['-NoProfile','-NonInteractive','-Command','. $env:SALTEDFISH_TEST_COMMON; Unregister-SaltedFishDesktop $env:SALTEDFISH_TEST_DATA '+suffix],{windowsHide:true,env});
   await run('-ValidateOnly');assert.deepEqual(await registry.read(key),nativeSettingsRegistryTree(f.config));await run('');assert.equal(await registry.read(key),null);assert.deepEqual(await registry.read(otherKey),other);assert.equal(await absent(path.join(f.folder,'registration.json')),false);await run('');
   await registerNativeSettings(f.config,f.entry,options);const own=(await registry.read(key))!,foreign=structuredClone(own);foreign.values.splice(1,0,{name:'Foreign',value:'keep',kind:'String'});await registry.replace(key,own,foreign);await assert.rejects(run('-ValidateOnly'));assert.deepEqual(await registry.read(key),foreign);await registry.replace(key,foreign,null);await registry.replace(key,null,own);
+});
+test('应用商店版的固定 ID 和已解压的扩展一起写进允许名单，格式不对就拒绝',windows,async t=>{
+  const f=await scene(t),store='abcdefghijklmnopabcdefghijklmnop';
+  await registerNativeSettings(f.config,f.entry,{...f.options,storeExtensionIds:[store]});
+  const host=JSON.parse(await readFile(path.join(f.folder,'host.json'),'utf8')),descriptor=JSON.parse(await readFile(path.join(f.folder,'native-launch.json'),'utf8'));
+  assert.deepEqual(host.allowed_origins,[unpackedExtensionOrigin(path.join(f.config.dataDir,'extension')),storeExtensionOrigin(store)].sort());assert.deepEqual(descriptor.allowedOrigins,host.allowed_origins);
+  assert.throws(()=>storeExtensionOrigin('ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP'),/无效/);assert.throws(()=>storeExtensionOrigin('qrstuvwxyzqrstuvwxyzqrstuvwxyzqr'),/无效/);
+  assert.deepEqual(STORE_EXTENSION_IDS.filter(id=>!/^[a-p]{32}$/.test(id)),[],'登记的商店 ID 都要是合法格式');
 });

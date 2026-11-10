@@ -674,6 +674,7 @@ Agent 的文件访问许可应由它自己的 harness 管理。SaltedFish 不另
 | `read-only-eval-v1` | 0.3.26 公开基线 | `readOnly:true`，包括批次脚本与等待；缺失则拒绝，不按普通脚本运行 |
 | `tab-groups-v1` | 0.3.26 公开基线 | MCP 会话标签组协调；缺失时没有扩展侧标签组，不能将其视为安全隔离 |
 | `self-update-v1` | 0.3.26 公开基线 | 扩展设置页自行更新；缺失时需按安装方式更新，不是页面动作门控 |
+| `store-build` | Chrome 应用商店版 | 商店版声明它代替 `self-update-v1`，由商店更新；管理页据此提示从应用商店更新。不是页面动作门控 |
 | `pause-control` | 0.3.26 公开基线 | `chrome_pause_profile`；缺失则拒绝，可在扩展中手动暂停 |
 | `activity` | 0.3.26 公开基线 | 活动协议声明；当前没有服务端消费方，不代表额外执行权限 |
 | `evaluate-v2` | 0.3.15 | `replMode`、后台作业启动；缺失则拒绝 |

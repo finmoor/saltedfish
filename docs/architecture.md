@@ -254,7 +254,7 @@ DOM 读取与语义定位逻辑构建成独立 bundle，经 `Page.createIsolated
 
 例如，`locator.inside` 和 `state:"attached"` 需要扩展 0.3.26 及以上、能力 `interaction-v10`。旧扩展收到这些请求会报需要更新，不派发。`initScript` 使用 `init-script-v1`；其他工具的能力要求见[交互说明](interaction.md)。
 
-自更新只适用于“加载已解压的扩展程序”的安装方式；从 Chrome 应用商店安装的扩展由商店更新。
+自更新只适用于“加载已解压的扩展程序”的安装方式。Chrome 应用商店版用 `scripts/build-extension.mjs --store` 构建：`extension/build-target.ts` 换成 `STORE_BUILD=true`，`self-update.ts` 换成不下载、不写文件的 `self-update-store.ts`，握手声明 `store-build` 代替 `self-update-v1`，由商店更新。Windows 本机设置入口的允许名单除了按文件夹路径算出的扩展 ID，还包括 `STORE_EXTENSION_IDS` 里登记的商店 ID。上架步骤见 [Chrome 应用商店上架](chrome-web-store.md)。
 
 手动加载的自更新在设置页标签中进行，使用 File System Access API：
 
