@@ -50,7 +50,7 @@ npm run package:extension-store
 - 收集的数据类型：网站内容（页面文字、截图）、网页浏览记录（标签页网址和标题）、个人身份信息（Google 账号邮箱）。
 - 用途：只用于扩展的单一用途；数据只发给用户自己配对的 SaltedFish 服务。
 - 声明：不出售给第三方；不用于与单一用途无关的目的；不用于信用评估或放贷。
-- 隐私政策地址：`https://github.com/finmoor/saltedfish/blob/main/PRIVACY.md`
+- 隐私政策地址：`https://raw.githubusercontent.com/finmoor/saltedfish/main/PRIVACY.md`。不用 `github.com/.../blob/...`：提交时那个页面对匿名访问返回过 503，商店报“无法访问隐私权政策链接”。
 
 ## 商店素材
 
