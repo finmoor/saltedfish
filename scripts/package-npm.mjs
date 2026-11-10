@@ -35,11 +35,14 @@ const pkg={...source};delete pkg.devDependencies;delete pkg.scripts;
 pkg.files = [...pkg.files.filter(file => !file.startsWith('docs/')), 'docs/'];
 await writeFile(path.join(stage,'package.json'),JSON.stringify(pkg,null,2)+'\n');
 await cp(path.join(repo,'package-lock.json'),path.join(stage,'package-lock.json'));
-for(const file of ['dist','ui','LICENSE','THIRD_PARTY_NOTICES.md',...packagedDocs]){await mkdir(path.dirname(path.join(stage,file)),{recursive:true});await cp(path.join(repo,file),path.join(stage,file),{recursive:true});}
+// dist/extension-store 是 Chrome 应用商店版的构建输出，单独上传商店，不进 npm 包。
+const storeBuild=path.join(repo,'dist','extension-store');
+for(const file of ['dist','ui','LICENSE','THIRD_PARTY_NOTICES.md',...packagedDocs]){await mkdir(path.dirname(path.join(stage,file)),{recursive:true});await cp(path.join(repo,file),path.join(stage,file),{recursive:true,filter:from=>path.resolve(from)!==storeBuild});}
 await writeFile(path.join(stage,'README.md'), await packageReadme(repo));
 await checkPackagedDocs(stage);
 await run(process.execPath,[npm,'ci','--omit=dev','--ignore-scripts','--no-audit','--no-fund'],{cwd:stage,windowsHide:true,maxBuffer:2*1024*1024});
 const listing=JSON.parse((await run(process.execPath,[npm,'pack','--dry-run','--json','--ignore-scripts'],{cwd:stage,windowsHide:true,maxBuffer:8*1024*1024})).stdout)[0];
+if(listing.files.some(file=>file.path.replaceAll('\\','/').startsWith('dist/extension-store/')))throw new Error('npm 包里混进了应用商店版扩展（dist/extension-store）。');
 const files={};
 for(const file of listing.files){
   const relative=file.path.replaceAll('\\','/');
