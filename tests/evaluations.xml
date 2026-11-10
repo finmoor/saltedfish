@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 面向代理的只读验收题；在 browser.integration.ts 完成准备、关闭测试浏览器之前执行。
+     仅允许读取测试配置 fixture-account-A/B；不得切换用户账号、点击或修改数据。
+     这是可重复的验收题集，尚未运行外部 LLM 评分器。 -->
+<evaluation>
+  <qa_pair><question>在两个测试账号配置中找到相同的本机测试网页，读取其 localStorage 的 account 字段。哪个配置保存 A？只返回配置名称。</question><answer>fixture-account-A</answer></qa_pair>
+  <qa_pair><question>在两个测试配置中定位测试网页，比较 account Cookie。只返回保存 account=B 的配置名称。</question><answer>fixture-account-B</answer></qa_pair>
+  <qa_pair><question>定位第一个测试账号的页面，从可交互元素的语义信息找到用于显示名称的输入框，再只读获取其值。仅返回值。</question><answer>多账号测试</answer></qa_pair>
+  <qa_pair><question>定位第一个测试账号的页面，检查选择框中实际选中的 option，而非仅读取所有选项文字。仅返回选中项的 value。</question><answer>two</answer></qa_pair>
+  <qa_pair><question>定位第一个测试账号的网页，检查带独立 Shadow DOM 的控件，读取其中输入框的实际值。不要修改页面。仅返回值。</question><answer>shadow text</answer></qa_pair>
+  <qa_pair><question>找到第一个测试账号页面中的 Shadow DOM 按钮相关状态，读取其结果文字。仅返回该文字。</question><answer>shadow-clicked</answer></qa_pair>
+  <qa_pair><question>找到第一个测试账号网页的跨源子页面，用 contexts 返回的上下文读取其中输入框值。不要在主页面执行同名选择器。仅返回值。</question><answer>iframe text</answer></qa_pair>
+  <qa_pair><question>找到第一个测试账号网页的跨源子页面，读取 body.dataset.clicked 验证其按钮此前的操作结果。仅返回值。</question><answer>yes</answer></qa_pair>
+  <qa_pair><question>在第一个测试账号的已有网络事件中找到测试接口返回的 JSON，使用 requestId 读取响应体；不要重新发请求。只返回 answer 数值。</question><answer>42</answer></qa_pair>
+  <qa_pair><question>定位第一个测试账号网页，通过文件输入控件及旁边的完成反馈交叉核验此前选择的文件名。仅返回文件名。</question><answer>upload-fixture.txt</answer></qa_pair>
+</evaluation>

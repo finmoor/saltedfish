@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { readFile, mkdir } from 'node:fs/promises';
+import { launchTestChrome } from './chrome-launch.js';
+import { fixture, testDirectory } from './helpers.js';
+import { parseCodex } from '../src/codex-config.js';
+import { projectDir } from '../src/config.js';
+
+test('安装入口定位接入页；明确一次信任、持久配置、撤销与恢复（实际鼠标）', async t => {
+  const home = await testDirectory(), entry = { command: 'fixture.exe', args: ['mcp'], env: {} };
+  const f = await fixture({ setup: { home: home.directory, entries: { codex: entry, opencode: entry, claude: entry }, verify: async () => ({ tools: 51, profiles: 0 }) } });
+  const browser = await launchTestChrome({ headless: true });
+  t.after(async () => { await browser.close(); await f.cleanup(); await home.cleanup(); });
+  const page = await browser.newPage(), errors: string[] = []; page.on('pageerror', error => errors.push(String(error)));
+  await page.setViewport({ width: 1280, height: 1000 });
+  await page.goto(`http://127.0.0.1:${f.config.port}/?onboarding=1#${f.config.token}`);
+  await page.waitForSelector('#overview:not([hidden])');
+  assert.ok(page.url().endsWith('/#overview')); assert.ok(!page.url().includes(f.config.token));await page.$eval('#advanced-nav',e=>(e as HTMLDetailsElement).open=true);await page.click('nav a[href="#setup"]');
+  await page.waitForSelector('#setup-clients .setup-card[data-client="codex"] .setup-trust');
+  const codex = '#setup-clients .setup-card[data-client="codex"]', opencode = '#setup-clients .setup-card[data-client="opencode"]';
+  async function apply(scope: string, label: string) {
+    await page.click(`${scope} > button`); await page.waitForSelector(`${scope} .setup-result button`);
+    assert.equal(await page.$eval(`${scope} .setup-result button`, node => node.textContent), label);
+    await page.click(`${scope} .setup-result button`);
+    await page.waitForFunction(scope => document.querySelector(`${scope} .setup-result`)!.textContent!.includes('已验证 51'), {}, scope);
+  }
+  await apply(codex, '信任并接入'); await apply(opencode, '信任并接入');
+  await page.click(codex+' .setup-advanced summary');await page.click(opencode+' .setup-advanced summary');
+  const codexFile = path.join(home.directory, '.codex/config.toml'), ocFile = path.join(home.directory, '.config/opencode/opencode.json');
+  assert.equal(parseCodex(await readFile(codexFile, 'utf8')).mcp_servers['saltedfish'].default_tools_approval_mode, 'approve');
+  assert.equal(JSON.parse(await readFile(ocFile, 'utf8')).permissions.at(-1).effect, 'allow');
+  await page.select(`${codex} .setup-trust`, 'prompt'); await apply(codex, '撤销信任并保存');
+  assert.equal(parseCodex(await readFile(codexFile, 'utf8')).mcp_servers['saltedfish'].default_tools_approval_mode, 'prompt');
+  await page.select(`${opencode} .setup-trust`, 'prompt'); await apply(opencode, '撤销信任并保存');
+  assert.equal(JSON.parse(await readFile(ocFile, 'utf8')).permissions.at(-1).effect, 'ask');
+  await page.select(`${codex} .setup-trust`, 'service'); await page.click(`${codex} > button`);
+  await page.waitForSelector(`${codex} .setup-result button`); await page.select(`${codex} .setup-trust`, 'preserve');
+  assert.equal(await page.$$eval(`${codex} .setup-result button`, nodes => nodes.length), 0, 'changing trust invalidates earlier consent');
+  await page.select(`${opencode} .setup-format`, 'v1');
+  assert.equal(await page.$eval(`${opencode} .setup-trust`, node => (node as HTMLSelectElement).value), 'preserve');
+  assert.equal(await page.$eval(`${opencode} .setup-trust`, node => (node as HTMLSelectElement).disabled), true);
+  await page.select(`${opencode} .setup-format`, 'v2'); await page.select(`${opencode} .setup-trust`, 'service');
+  await mkdir(path.join(projectDir, '.local/verification'), { recursive: true });
+  await page.$eval('#setup', node => node.scrollIntoView());
+  await page.screenshot({ path: path.join(projectDir, '.local/verification/once-trust-desktop.png') });
+  await page.setViewport({ width: 390, height: 900 }); await page.$eval('#setup', node => node.scrollIntoView());
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: path.join(projectDir, '.local/verification/once-trust-mobile.png') });
+  assert.deepEqual(errors, []);
+});

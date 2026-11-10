@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>SaltedFish styled controls</title>
+<style>
+body{font:18px sans-serif;padding:24px}.row{display:block;position:relative;height:48px;width:380px}.row input{position:absolute;left:0;top:0;width:32px;height:32px;opacity:0;margin:0;cursor:pointer}.skin{display:inline-block;width:30px;height:30px;border:1px solid #333;vertical-align:middle;margin-right:12px}.row:has(input:checked) .skin{background:#14864e}.todo label{display:block;height:40px;padding-left:44px;background:linear-gradient(#14864e,#14864e) left center/32px 32px no-repeat}.cover{position:absolute;inset:0;background:#ccc;z-index:2}
+</style>
+<label class="row"><input id="styled" type="checkbox" aria-label="Styled acceptance"><span class="skin"></span><span>Styled acceptance</span></label>
+<div class="row todo"><input id="todo" type="checkbox" aria-label="Toggle Todo"><label>Todo skin</label></div>
+<div class="row"><input id="radio" type="radio" name="r" aria-label="Styled radio"><label for="radio"><span class="skin"></span>Styled radio</label></div>
+<button role="switch" aria-checked="false" id="switch" onclick="this.setAttribute('aria-checked',this.getAttribute('aria-checked')==='true'?'false':'true')">ARIA switch</button>
+<label class="row"><input id="disabled" type="checkbox" disabled><span class="skin"></span>Disabled</label>
+<label class="row" inert><input id="inert" type="checkbox"><span class="skin"></span>Inert</label>
+<label class="row"><input id="display" type="checkbox" style="display:none"><span class="skin"></span>Display none</label>
+<label class="row"><input id="visibility" type="checkbox" style="visibility:hidden"><span class="skin"></span>Visibility hidden</label>
+<label class="row" style="opacity:0"><input id="ancestor" type="checkbox"><span class="skin"></span>Transparent ancestor</label>
+<label class="row"><input id="plain" type="checkbox">Text without skin</label>
+<div class="row"><input id="orphan" type="checkbox" aria-label="No proxy"></div>
+<label class="row"><input id="obscured" type="checkbox"><span class="skin"></span>Obscured<span class="cover"></span></label>
+<label class="row"><input id="pointer" type="checkbox" style="pointer-events:none"><span class="skin"></span>Pointer none</label>
+<label class="row"><input id="wrong-label" type="checkbox"><label for="other"><span class="skin"></span>Wrong association</label></label>
+<input id="hidden-state" type="checkbox" aria-label="Hidden state" checked style="display:none"><button id="hidden-switch" role="switch" aria-label="Hidden switch" aria-checked="false" style="display:none"></button>
+<output id="status">OFF</output><output id="tail">0</output>
+<script>window.events=[];for(const type of ['click','change'])document.addEventListener(type,e=>{if(e.target.id)events.push({type,id:e.target.id,trusted:e.isTrusted})});document.querySelector('#styled').onchange=e=>document.querySelector('#status').textContent=e.target.checked?'ON':'OFF';</script>

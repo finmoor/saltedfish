@@ -1,0 +1,9 @@
+<!doctype html><style>body{margin:35px}iframe{margin-left:230px;border:11px solid navy;width:330px;height:170px}button,input{margin:8px;padding:8px}</style>
+<button id="normal" onclick="window.count=(window.count||0)+1">Normal</button>
+<fieldset disabled><legend><input id="legend" value="allowed"></legend><input id="disabled" value="ORIGINAL"><button id="disabled-button" onclick="window.bad=true">Disabled group</button></fieldset>
+<div aria-disabled="true"><input id="aria-child" value="ORIGINAL"></div>
+<details id="fold"><summary>Toggle</summary><button id="folded">Folded target</button></details>
+<button id="confirm" onclick="window.dialogClicks=(window.dialogClicks||0)+1;window.answer=confirm('fixture-confirm')">Confirm</button>
+<button id="alert" onclick="window.dialogClicks=(window.dialogClicks||0)+1;alert('fixture-alert');window.answer='alert-closed'">Alert</button>
+<button id="prompt" onclick="window.dialogClicks=(window.dialogClicks||0)+1;window.answer=prompt('fixture-prompt')">Prompt</button>
+<div style="height:180px"></div><iframe id="frame" src="/frame"></iframe>

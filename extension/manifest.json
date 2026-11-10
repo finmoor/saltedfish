@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "SaltedFish",
+  "version": "0.3.27",
+  "version_name": "0.3.27",
+  "description": "让 AI 用上你正在用的浏览器。支持多账号隔离、本地与远程 Agent。",
+  "minimum_chrome_version": "125",
+  "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" },
+  "permissions": ["debugger", "tabs", "tabGroups", "storage", "alarms", "downloads", "scripting", "nativeMessaging", "contentSettings", "identity", "identity.email"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "SaltedFish 连接设置", "default_popup": "options.html", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" } },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "incognito": "not_allowed"
+}

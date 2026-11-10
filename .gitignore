@@ -1,0 +1,30 @@
+node_modules/
+dist/
+.local/
+.research/
+# 维护者的内部记录（交接、发行记录、评审），是单独的私有仓库。
+.internal/
+coverage/
+*.log
+release/
+.packaging/
+
+# 本机凭据、运行数据和个人工具配置不进入源码仓库。
+.env
+.env.*
+!.env.example
+*.token
+*.pem
+*.key
+*.pfx
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+pairing.json
+data/
+.claude/
+.codex/
+.agents/
+Thumbs.db
+.DS_Store

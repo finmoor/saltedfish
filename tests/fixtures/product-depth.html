@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>F05–F09 controlled fixture</title>
+<style>body{margin:30px}button,input,select{padding:10px;margin:6px}#cover{position:fixed;inset:0;background:#ddd9;z-index:999}#moving{position:relative}</style>
+<button id="late" onclick="window.clicks=(window.clicks||0)+1">Later enabled</button>
+<button id="covered" onclick="window.coveredClicks=(window.coveredClicks||0)+1">Covered</button>
+<button id="moving" onclick="window.movingClicks=(window.movingClicks||0)+1">Moving</button>
+<button id="image"><img alt="图标下载" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/%3E"></button>
+<button id="hidden-text">目标<span aria-hidden="true">装饰</span></button>
+<label>Dropdown (select)<select id="choice"><option value="one">One</option><option value="two" selected>Two</option></select></label>
+<label>范围<input id="range" type="range" value="40"></label>
+<label>普通字段<input id="text" value="initial"></label>
+<label>勾选<input id="check" type="checkbox" checked></label>
+<label>密码<input id="password" type="password" value="sensitive-password"></label>
+<label>API Token<input id="token" name="api_token" value="sensitive-token"></label>
+<label>只读<input id="readonly" readonly value="locked"></label>
+<div id="scope"><button>Scoped action</button></div><div id="outside"><button>Outside action</button></div><output id="result"></output>

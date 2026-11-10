@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Chrome MCP integration fixture</title></head><body>
+<h1>Multi-profile browser fixture</h1>
+<label>Display name <input id="name" placeholder="Display name"></label>
+<label>Secret <input id="secret" type="password" value="do-not-include-in-inspect"></label>
+<select id="choice"><option value="one">One</option><option value="two">Two</option></select>
+<button id="increment">Increment</button><output id="count">0</output>
+<button id="request">Request data</button><pre id="response"></pre>
+<input id="upload" type="file"><output id="filename"></output>
+<button id="download">Download fixture</button>
+<button id="open-popup" onclick="window.open('/frame','_blank')">Open details</button>
+<button class="duplicate">Same action</button><button class="duplicate">Same action</button>
+<div id="shadow"></div><iframe id="frame" title="Child fixture"></iframe>
+<script>
+let count = 0;
+document.querySelector('#increment').onclick = () => { document.querySelector('#count').textContent = String(++count); };
+document.querySelector('#request').onclick = async () => { document.querySelector('#response').textContent = await (await fetch('/api/data')).text(); };
+document.querySelector('#upload').onchange = event => { document.querySelector('#filename').textContent = event.target.files[0]?.name || ''; };
+document.querySelector('#download').onclick = () => { const a = document.createElement('a'); a.href = '/download'; a.download = 'fixture.txt'; a.click(); };
+const shadow = document.querySelector('#shadow').attachShadow({mode:'open'}); shadow.innerHTML = '<label>Shadow input <input id="shadow-input"></label><button id="shadow-button">Shadow action</button><span id="shadow-result"></span>';
+shadow.querySelector('#shadow-button').onclick = () => { shadow.querySelector('#shadow-result').textContent = 'shadow-clicked'; };
+document.querySelector('#frame').src = `http://localhost:${location.port}/frame`;
+</script></body></html>

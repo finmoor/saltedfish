@@ -1,0 +1,101 @@
+{
+  "name": "saltedfish",
+  "version": "0.3.27",
+  "description": "Let AI agents use the Chrome you already use, over MCP: multiple profiles, tab-group scoped writes, local or LAN service. 让 AI 用上你正在用的浏览器。",
+  "license": "MIT",
+  "author": "Finn (https://github.com/finmoor)",
+  "homepage": "https://github.com/finmoor/saltedfish#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/finmoor/saltedfish.git"
+  },
+  "bugs": {
+    "url": "https://github.com/finmoor/saltedfish/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "chrome",
+    "chrome-extension",
+    "browser-automation",
+    "ai-agent",
+    "claude-code",
+    "codex",
+    "opencode"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "tag": "beta"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.extension.json --noEmit && node scripts/build-extension.mjs && node scripts/build-desktop.mjs && node scripts/build-native-settings.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.extension.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:browser": "node --import tsx tests/browser.integration.ts",
+    "test:ui": "node --import tsx --test --test-concurrency=1 tests/ui*.integration.ts",
+    "test:clients": "node --import tsx tests/client-compat.integration.ts",
+    "test:soak": "node --import tsx tests/soak.ts",
+    "test:installed": "node scripts/smoke-installed.mjs",
+    "package:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
+    "test:package": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-package.ps1",
+    "start": "node dist/cli.js serve",
+    "setup": "node dist/cli.js setup",
+    "doctor": "node dist/cli.js doctor",
+    "mcp": "node dist/cli.js mcp",
+    "test:codex-trust": "node --import tsx tests/codex-trust.integration.ts",
+    "test:opencode-trust": "node --import tsx tests/opencode-trust.integration.ts",
+    "test:claude-trust": "node --import tsx tests/claude-trust.integration.ts",
+    "test:self-update": "node --import tsx --test tests/self-update.integration.ts",
+    "package:server": "npm run build && node scripts/package-server.mjs",
+    "test:execution": "node --import tsx --test tests/execution-regressions.integration.ts",
+    "test:interaction": "node --import tsx --test tests/interaction.integration.ts",
+    "test:navigation": "node --import tsx --test tests/navigation.integration.ts",
+    "test:performance": "node --import tsx --test tests/interaction-performance.integration.ts",
+    "package:npm": "node scripts/package-npm.mjs",
+    "test:npm": "node --import tsx --test tests/npm-package.integration.ts",
+    "release:npm": "node scripts/promote-npm.mjs",
+    "package:extension": "npm run build && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1",
+    "test:styled-controls": "node --import tsx --test tests/styled-controls.integration.ts",
+    "verify:release": "node scripts/verify-release.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "jsonc-parser": "3.3.1",
+    "toml-eslint-parser": "1.0.3",
+    "ws": "8.22.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.6",
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "ajv": "8.20.0",
+    "dom-accessibility-api": "0.7.1",
+    "esbuild": "0.28.2",
+    "puppeteer-core": "25.16.0",
+    "tsx": "^4.20.0",
+    "typescript": "7.0.2"
+  },
+  "bin": {
+    "saltedfish": "dist/npm-cli.js"
+  },
+  "files": [
+    "dist/",
+    "ui/",
+    "THIRD_PARTY_NOTICES.md",
+    "saltedfish-release.json",
+    "LICENSE",
+    "docs/"
+  ],
+  "bundleDependencies": [
+    "@modelcontextprotocol/sdk",
+    "jsonc-parser",
+    "toml-eslint-parser",
+    "ws",
+    "zod"
+  ]
+}

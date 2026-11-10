@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdir,copyFile,constants} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import { requiredReleaseGroups, sourceFingerprint, assertReleaseEvidence, assertNpmReport } from './release-evidence.mjs';
+const repo=fileURLToPath(new URL('..',import.meta.url));
+const json=async file=>JSON.parse((await readFile(path.join(repo,file),'utf8')).replace(/^\uFEFF/,''));
+const candidate=await json('.local/last-npm-package.json'),pkg=await json('package.json');
+assert.equal(candidate.candidate,true,'需要尚未冻结的候选包');assert.equal(candidate.version,pkg.version);
+assert.ok(path.resolve(candidate.target).startsWith(path.join(repo,'.local','npm-candidates')+path.sep));
+assert.equal(await sourceFingerprint(repo),candidate.sourceFingerprint,'构建后源码或测试变化，不能冻结旧候选');
+const coverage=await Promise.all(requiredReleaseGroups.map(group=>json(`.local/verification/release-${candidate.version}-${group}.json`)));
+assertReleaseEvidence(candidate,coverage);
+// 每个平台报告都要来自该平台、场景清单完整（含真实上一发行版的升级/回滚），数据格式升高时必须有“拒绝不兼容降级”的证据。
+const reports=await Promise.all(['win32','linux'].map(async platform=>({platform,report:await json(`.local/verification/npm-${platform}-${candidate.version}.json`)})));
+for(const{platform,report}of reports)assertNpmReport(report,{platform,candidate,allowNoPrevious:process.env.SALTEDFISH_ALLOW_NO_PREVIOUS==='1'});
+const bytes=await readFile(candidate.target);assert.equal(createHash('sha256').update(bytes).digest('hex'),candidate.sha256);
+const target=path.join(repo,'release',path.basename(candidate.target));await mkdir(path.dirname(target),{recursive:true});
+await copyFile(candidate.target,target,constants.COPYFILE_EXCL);
+await writeFile(`${target}.sha256`,`${candidate.sha256}  ${path.basename(target)}\n`);
+const evidence={version:candidate.version,sha256:candidate.sha256,sourceFingerprint:candidate.sourceFingerprint,normalizedSourceFingerprint:candidate.normalizedSourceFingerprint,provenance:candidate.provenance,time:new Date().toISOString(),passed:true,groups:coverage.map(r=>({group:r.group,passed:r.passed,completedAt:r.completedAt})),performance:coverage.find(r=>r.group==='performance').performance,platforms:reports.map(({platform,report:r})=>({platform,scenarios:r.checks.length,passed:r.passed,previousVersion:r.previousVersion,previousScenario:r.previousScenario||'ran',stateVersions:r.stateVersions,incompatiblePreviousRollbackRejected:r.incompatiblePreviousRollbackRejected===true})),additionalCoverage:{realModels:'pending',dailyChromeProfiles:'pending',server91:'pending',currentVersion72h:'pending'},scope:'类型、服务、UI、独立浏览器、性能与同包Windows/Linux npm生命周期；不替代真实模型、日常Chrome或长测',published:false};
+await writeFile(`${target}.verification.json`,JSON.stringify(evidence,null,2));
+await writeFile(path.join(repo,'.local/last-npm-package.json'),JSON.stringify({...candidate,target,candidate:false,promotedAt:evidence.time},null,2));
+console.log(JSON.stringify({target,...evidence}));
