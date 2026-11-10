@@ -5,7 +5,7 @@
 
 [English](README.en.md)
 
-SaltedFish 让 AI Agent 通过 MCP 用上你正在用的 Chrome：已登录的账号、装好的扩展、多个 Chrome 配置，都不用重新准备。当前版本 **0.3.27**。
+SaltedFish 让 AI Agent 通过 MCP 用上你正在用的 Chrome：已登录的账号、装好的扩展、多个 Chrome 配置，都不用重新准备。当前版本 **0.3.28**。
 
 它由两部分组成：一个本机（或内网）服务，和装在每个 Chrome 配置里的扩展。Agent 连服务的 MCP 入口，扩展主动连服务，服务负责授权、排队、记录和恢复。
 

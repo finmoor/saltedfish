@@ -19,7 +19,7 @@ const absent=async(file:string)=>access(file).then(()=>false,()=>true);
 async function scene(t:TestContext){
   const temp=await testDirectory();t.after(()=>temp.cleanup());const config={dataDir:path.join(temp.directory,'data'),port:54441},registry=new Registry(),binary=path.join(temp.directory,'fixture.exe'),extensionSource=path.join(temp.directory,'source');
   await mkdir(extensionSource,{recursive:true});await writeFile(path.join(extensionSource,'manifest.json'),JSON.stringify({name:'SaltedFish',manifest_version:3,background:{service_worker:'background.js',type:'module'},options_ui:{page:'options.html'}}));await writeFile(path.join(extensionSource,'background.js'),'// trusted');await writeFile(path.join(extensionSource,'options.html'),'<p>trusted</p>');await mkdir(config.dataDir);await cp(extensionSource,path.join(config.dataDir,'extension'),{recursive:true});await writeFile(path.join(config.dataDir,'extension/pairing.json'),'never-read-secret');await writeFile(binary,'fixture binary');
-  const entry={command:process.execPath,args:[path.join(temp.directory,'trusted.js')]},options={platform:'win32' as const,registry,binary,extensionSource},folder=path.join(config.dataDir,'native-settings'),key='HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.saltedfish.settings.p54441';
+  const entry={command:process.execPath,args:[path.join(temp.directory,'trusted.js')]},options={platform:'win32' as const,registry,binary,extensionSource,storeExtensionIds:[] as readonly string[]},folder=path.join(config.dataDir,'native-settings'),key='HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.saltedfish.settings.p54441';
   return{temp,config,registry,binary,entry,options,folder,key,extensionSource};
 }
 test('Windows已解压扩展ID遵循Chromium路径算法且不改变原ID',()=>{
@@ -77,4 +77,7 @@ test('应用商店版的固定 ID 和已解压的扩展一起写进允许名单�
   assert.deepEqual(host.allowed_origins,[unpackedExtensionOrigin(path.join(f.config.dataDir,'extension')),storeExtensionOrigin(store)].sort());assert.deepEqual(descriptor.allowedOrigins,host.allowed_origins);
   assert.throws(()=>storeExtensionOrigin('ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP'),/无效/);assert.throws(()=>storeExtensionOrigin('qrstuvwxyzqrstuvwxyzqrstuvwxyzqr'),/无效/);
   assert.deepEqual(STORE_EXTENSION_IDS.filter(id=>!/^[a-p]{32}$/.test(id)),[],'登记的商店 ID 都要是合法格式');
+  // 不指定时用登记的商店 ID（发行版走这条路）
+  const {storeExtensionIds:_,...defaults}=f.options;await unregisterNativeSettings(f.config,defaults);await registerNativeSettings(f.config,f.entry,defaults);
+  assert.deepEqual(JSON.parse(await readFile(path.join(f.folder,'host.json'),'utf8')).allowed_origins,[unpackedExtensionOrigin(path.join(f.config.dataDir,'extension')),...STORE_EXTENSION_IDS.map(storeExtensionOrigin)].sort());
 });

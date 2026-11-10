@@ -31,5 +31,12 @@ test('--store 构建出的扩展没有一键更新的代码，默认构建照旧
   }
   assert.match(store.background, /STORE_BUILD = true/); assert.match(normal.background, /STORE_BUILD = false/);
   assert.equal(JSON.parse(await readFile(path.join(temp.directory, 'store', 'pairing.json'), 'utf8')).token, '', '商店版不带配对密钥');
-  assert.deepEqual(JSON.parse(await readFile(path.join(temp.directory, 'store', 'manifest.json'), 'utf8')), JSON.parse(await readFile(path.join(projectDir, 'extension/manifest.json'), 'utf8')));
+  // 商店版 manifest 只多了本地化：描述和工具栏标题走 _locales，其余和源 manifest 一样
+  const source = JSON.parse(await readFile(path.join(projectDir, 'extension/manifest.json'), 'utf8')), built = JSON.parse(await readFile(path.join(temp.directory, 'store', 'manifest.json'), 'utf8'));
+  assert.deepEqual(built, { ...source, default_locale: 'en', description: '__MSG_extDescription__', action: { ...source.action, default_title: '__MSG_actionTitle__' } });
+  for (const locale of ['en', 'zh_CN']) {
+    const messages = JSON.parse(await readFile(path.join(temp.directory, 'store', '_locales', locale, 'messages.json'), 'utf8'));
+    assert.ok(messages.extDescription.message.length <= 132, `${locale} 描述超过商店的 132 字上限`); assert.ok(messages.actionTitle.message);
+  }
+  assert.equal(JSON.parse(await readFile(path.join(temp.directory, 'normal', 'manifest.json'), 'utf8')).default_locale, undefined, '默认版不带 _locales（一键更新只认平铺文件）');
 });

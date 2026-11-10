@@ -15,11 +15,11 @@ npm run package:extension-store
 - **没有一键更新。** 一键更新会从已配对的服务下载扩展文件，写进扩展自己的文件夹再重载（`extension/self-update.ts`）。商店禁止扩展执行远程获取的代码，商店安装的扩展还有内容校验，文件被改会被 Chrome 判成已损坏。商店版构建时 `extension/build-target.ts` 换成 `STORE_BUILD=true`，`self-update.ts` 换成 `self-update-store.ts`：设置页没有“更新”按钮，后台不响应更新消息，工具栏不显示 NEW。构建和打包都会检查产物里没有写文件夹的代码。
 - **声明 `store-build` 代替 `self-update-v1`。** 管理页据此提示“商店会自动更新”，不再叫用户覆盖文件夹。
 - **不带服务地址。** 管理页下载的 ZIP 带服务地址；商店版首次打开时在设置页填服务地址。
+- **带英文描述。** 商店版的 manifest 加 `default_locale: "en"`，描述和工具栏标题取自 `extension/store-locales/{en,zh_CN}/messages.json`（打包进 `_locales/`），商店和 `chrome://extensions` 按浏览器语言显示。默认版不带 `_locales`：一键更新只认平铺的文件。
 
-## 上架前还要做的
+**商店分配的扩展 ID** 登记在 `src/native-settings-registration.ts` 的 `STORE_EXTENSION_IDS`。Windows 本机设置入口和文件助手（Native Messaging）只认允许名单里的扩展；“加载已解压的扩展程序”的 ID 按文件夹路径算，商店版的 ID 在第一次把 ZIP 上传到开发者后台时分配。服务版本比商店版旧、名单里还没有这个 ID 时，商店版照样能用，只是在 Windows 上点“打开管理页”会走登录页，不能直接进入。
 
-1. **登记商店分配的扩展 ID。** Windows 本机设置入口和文件助手（Native Messaging）只认允许名单里的扩展。“加载已解压的扩展程序”的 ID 按文件夹路径算；商店版的 ID 在第一次把 ZIP 上传到开发者后台时分配（存成草稿就有），拿到后填进 `src/native-settings-registration.ts` 的 `STORE_EXTENSION_IDS`，随下一版服务发布。没填之前商店版照样能用，只是在 Windows 上点“打开管理页”会走登录页，不能直接进入。
-2. **英文名称和描述。** `manifest.json` 现在只有中文。加 `default_locale` 和 `_locales/{zh_CN,en}/messages.json`，商店和 `chrome://extensions` 才会按语言显示。
+开发者后台不能用脚本操作：Chrome 不允许任何扩展脚本操作应用商店页面，上传和填表由维护者本人在浏览器里完成。
 
 ## 单一用途
 
@@ -43,7 +43,7 @@ npm run package:extension-store
 | `identity`、`identity.email` | 读取这个 Chrome 配置登录的 Google 账号邮箱，显示在用户自己的管理页里，用来区分多个 Chrome 配置。只发给用户配对的服务。 |
 | `nativeMessaging` | Windows 上从扩展设置页直接打开本机 SaltedFish 管理页，以及可选的文件助手读取 Chrome 已下载的文件。 |
 
-**远程代码**：不使用。扩展执行的全部代码都在包内；商店版不包含一键更新（见上文）。Agent 请求的页面脚本（`chrome_evaluate`）是用户授权的 Agent 发起、在页面里求值的数据，不是扩展自身的代码。
+**远程代码**：申报“使用”。扩展自身的逻辑全部在包内，不从网络加载代码，商店版也不包含一键更新（见上文）；但 `chrome_evaluate`、`chrome_wait` 的表达式和 `initScript` 是用户授权的 Agent 发来的 JS 字符串，扩展经 `chrome.debugger`（`Runtime.evaluate`）在目标网页里执行，和在开发者工具控制台里执行一样，不在扩展自己的上下文里运行。商店对远程代码的定义包括“不在扩展包里的 JS”，所以如实申报并说明。
 
 ## 数据披露（商店“隐私权”页）
 
@@ -57,15 +57,15 @@ npm run package:extension-store
 | 项目 | 规格 | 状态 |
 | --- | --- | --- |
 | 图标 | 128×128 PNG | 已有 `extension/icon-128.png` |
-| 截图 | 1280×800 或 640×400，1–5 张 | 待做：扩展设置页、管理页的浏览器列表、Agent 授权、标签组 |
-| 小型宣传图 | 440×280 | 待做 |
+| 截图 | 1280×800 或 640×400，1–5 张 | 管理页的概览、浏览器、操作记录三张，用测试服务和 Chrome for Testing 截的，不含真实账号 |
+| 小型宣传图 | 440×280 | 已做 |
 | 简短描述 | 132 字以内 | 见下 |
 | 详细描述 | 中文、英文各一份 | 见下 |
 
-简短描述：
+简短描述就是商店版 manifest 的描述，以 `extension/store-locales/*/messages.json` 的 `extDescription` 为准：
 
-- 中文：让 AI Agent 通过你自己运行的 SaltedFish 服务，用上你正在用的 Chrome：多配置隔离，写操作限定在 Agent 自己的标签组里。
-- English: Let your AI agents use the Chrome you already use, through a SaltedFish service you run yourself. Per-profile grants, writes limited to the agent's own tab group.
+- English: Let your AI agents use the Chrome you already use, through a SaltedFish service you run yourself.
+- 中文：让 AI Agent 通过你自己运行的 SaltedFish 服务，用上你正在用的 Chrome。
 
 详细描述（英文，中文按 README 改写）：
 

@@ -25,8 +25,16 @@ if ($Store) {
     }
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $repo 'release') | Out-Null
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::CreateFromDirectory($source,$target,[IO.Compression.CompressionLevel]::Optimal,$false)
+# 不用 ZipFile.CreateFromDirectory：.NET Framework 写的子目录条目名用反斜杠（_locales\en\...），Chrome 认不出。
+$zip = [IO.Compression.ZipFile]::Open($target, [IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($file in Get-ChildItem -LiteralPath $source -Recurse -File | Sort-Object FullName) {
+        $name = $file.FullName.Substring($source.Length).TrimStart('\').Replace('\','/')
+        [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $name, [IO.Compression.CompressionLevel]::Optimal)
+    }
+} finally { $zip.Dispose() }
 . (Join-Path $repo 'packaging\common.ps1')
 $hash = Get-Sha256 $target
 [IO.File]::WriteAllText(($target+'.sha256'),($hash+'  '+[IO.Path]::GetFileName($target)+"`n"),[Text.UTF8Encoding]::new($false))

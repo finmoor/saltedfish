@@ -25,8 +25,8 @@ const readOptional=async(file:string)=>readFile(file).catch(error=>{if(error.cod
 async function atomic(file:string,value:Buffer|string){const temporary=file+'.'+randomUUID()+'.tmp';try{await writeFile(temporary,value,{flag:'wx',mode:0o600});for(let attempt=0;;attempt++)try{await rename(temporary,file);break;}catch(error){if(attempt===5||!['EPERM','EACCES','EBUSY'].includes((error as NodeJS.ErrnoException).code||''))throw error;await new Promise(resolve=>setTimeout(resolve,20*2**attempt));}}finally{await rm(temporary,{force:true});}}
 
 // Chrome 应用商店版扩展的 ID（商店分配、固定，只有商店发布的包能用这个 ID，所以不用像已解压的扩展那样核对文件）。
-// 第一次把商店版上传到开发者后台后填进来，Windows 本机设置入口和文件助手才认它。
-export const STORE_EXTENSION_IDS:readonly string[]=[];
+// 商店在第一次上传时分配（2026-11-10）；Windows 本机设置入口和文件助手按这里认它。
+export const STORE_EXTENSION_IDS:readonly string[]=['gmanoghblnlfcgochgpabkdelhnlmfnl'];
 export function storeExtensionOrigin(id:string){if(!/^[a-p]{32}$/.test(id))throw new Error('应用商店扩展 ID 无效。');return `chrome-extension://${id}/`;}
 
 // Chromium GenerateIdForPath: Windows FilePath 的 UTF-16 字节；仅统一盘符大小写。

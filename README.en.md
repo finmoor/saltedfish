@@ -4,7 +4,7 @@
 
 [中文](README.md)
 
-SaltedFish lets AI agents use the Chrome you already use, over MCP: your signed-in accounts, your installed extensions, and multiple Chrome profiles, with nothing to set up again. Current version: **0.3.27**.
+SaltedFish lets AI agents use the Chrome you already use, over MCP: your signed-in accounts, your installed extensions, and multiple Chrome profiles, with nothing to set up again. Current version: **0.3.28**.
 
 It has two parts: a service that runs on your computer (or on a machine in your LAN), and an extension installed in each Chrome profile. Agents connect to the service's MCP endpoint, the extension connects to the service, and the service handles authorization, queuing, the operation log and recovery.
 

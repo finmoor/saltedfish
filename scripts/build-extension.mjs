@@ -25,6 +25,14 @@ await build({ entryPoints: ['extension/background.ts', 'extension/options.ts'], 
 for (const file of ['manifest.json', 'options.html', 'options.css', 'icon-16.png', 'icon-32.png', 'icon-48.png', 'icon-128.png']) await copyFile(`extension/${file}`, path.join(outdir, file));
 await writeFile(path.join(outdir, 'pairing.json'), JSON.stringify({ port: 17422, token: '' }));
 if (store) {
+  // 商店版带英文和中文的描述（_locales）。默认版不带：一键更新只认平铺的文件，不能有子目录。
+  const manifest = JSON.parse(await readFile('extension/manifest.json', 'utf8'));
+  manifest.default_locale = 'en'; manifest.description = '__MSG_extDescription__'; manifest.action.default_title = '__MSG_actionTitle__';
+  await writeFile(path.join(outdir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  for (const locale of ['en', 'zh_CN']) {
+    await mkdir(path.join(outdir, '_locales', locale), { recursive: true });
+    await copyFile(`extension/store-locales/${locale}/messages.json`, path.join(outdir, '_locales', locale, 'messages.json'));
+  }
   // 换没换成功，看产物里还有没有写文件夹的代码；有就不算商店版。
   for (const file of ['background.js', 'options.js']) {
     const code = await readFile(path.join(outdir, file), 'utf8');
