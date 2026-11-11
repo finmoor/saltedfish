@@ -1,43 +1,102 @@
 # SaltedFish
 
-> You chill. Agents browse.
-> Agent 干活，你当咸鱼。
+<p align="center">
+  <img src=".github/assets/hero.png" width="100%" alt="SaltedFish：你在自己的标签页里做事，服务器上的 Claude Code 和本机的 Codex 在各自的标签组里后台操作，扩展里可以随时暂停">
+</p>
 
-[English](README.en.md)
+<p align="center">
+  <a href="https://www.npmjs.com/package/saltedfish"><img src="https://img.shields.io/npm/v/saltedfish?label=npm&color=235d48" alt="npm 版本"></a>
+  <a href="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml"><img src="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Node.js-24%2B-235d48" alt="Node.js 24+">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-235d48" alt="Windows 和 Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-235d48" alt="MIT 许可"></a>
+</p>
 
-SaltedFish 让 AI Agent 通过 MCP 用上你正在用的 Chrome：已登录的账号、装好的扩展、多个 Chrome 配置，都不用重新准备。当前版本 **0.3.28**。
+<p align="center">
+  <b>中文</b> · <a href="README.en.md">English</a> · <a href="#快速开始">快速开始</a> · <a href="docs/npm.md">安装与运维</a> · <a href="docs/interaction.md">工具语义</a> · <a href="docs/architecture.md">架构</a>
+</p>
 
-它由两部分组成：一个本机（或内网）服务，和装在每个 Chrome 配置里的扩展。Agent 连服务的 MCP 入口，扩展主动连服务，服务负责授权、排队、记录和恢复。
+SaltedFish 是一个不设限的浏览器工具：让任何支持 MCP 的 AI Agent 直接用**你正在用的 Chrome**。Agent 在服务器上，也能操作你电脑上的浏览器。
 
-```
-Claude Code / Codex / OpenCode / …  ──MCP──▶  SaltedFish 服务  ◀──WebSocket──  Chrome 扩展（每个 Chrome 配置一个）
-                                              管理页 · 授权 · 操作记录
-```
+## 为什么用 SaltedFish
 
-## 特点
+ChatGPT、Claude、WorkBuddy 自带的插件也能用你的登录状态，但只服务自家的 Agent，还限定能碰哪些网站。SaltedFish 是你自己运行的工具：
 
-- **用你自己的浏览器**：不用另开一个干净的浏览器重新登录。每个 Chrome 配置单独配对、单独授权，同名也不会串号；配置离线时明确报错，不会换到另一个账号。
-- **不打扰你**：Agent 在后台标签页里操作，不切换你正在看的标签页。每个 Agent 会话的标签页放在自己的标签组里，写操作只能落在这个组里。
-- **不重放**：写操作派发前先记下来。断线、崩溃、超时留下的结果不明的操作会挡住后续写入，先核对页面再显式恢复，提交、付款这类动作不会被自动重试。
-- **少往返**：动作结果直接带页面变化；`chrome_batch` 在浏览器里一次跑完一段填表、点击、等待。
-- **多种 Agent**：`saltedfish connect` 自动写好 Codex CLI、Claude Code、OpenCode、pi、agy、Claude Desktop、CodeBuddy、WorkBuddy 的配置，写之前备份。
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**不设限**
+
+没有网站名单，不替你拦动作。能碰什么、做到哪一步，只看你的授权。
+
+</td>
+<td width="50%" valign="top">
+
+**服务器上的 Agent，直接操作你电脑上的 Chrome**
+
+无头服务器不用装浏览器、不用登录。Agent 在服务器上跑，点的是你桌面 Chrome 里已登录的网页。多台电脑的 Chrome 都能接进来，按名字调用。
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**模拟真人操作**
+
+用的是你真实的浏览器和账号环境。鼠标走曲线、点击有停顿、短文本逐键输入，不往页面里加东西，降低被风控封号的风险。
+
+</td>
+<td valign="top">
+
+**不绑定 Agent 和模型**
+
+任何支持 MCP 的 Agent 都能接，一条命令接好八种。几个 Agent 可以同时用。
+
+</td>
+</tr>
+</table>
+
+| | 厂商自带插件 | 自动化浏览器 | SaltedFish |
+| --- | --- | --- | --- |
+| 能碰的网站 | 厂商定，有的默认屏蔽金融类 | 不限 | 不限，由你授权 |
+| Agent 在服务器上 | 不支持 | 浏览器也得在服务器上 | 直接操作你电脑上的 Chrome |
+| 登录状态 | 有 | 没有 | 有 |
+| 能接的 Agent | 只有自家 | 看框架 | 任何 MCP 客户端 |
+| 多个 Agent 同时用 | 只有自家一个 | 各起各的 | 各自授权、各自标签组 |
+
+该有的也都有：
+
+- **多账号不串号**：每个 Chrome 配置单独配对；配置离线就报错，不会换号执行。
+- **不打扰你**：Agent 在后台标签页操作，标签页收在自己的标签组里。
+- **不重放**：结果不明的写操作会挡住后续写入，提交、付款不会自动重试。
+- **省 token**：动作结果带页面变化；`chrome_batch` 一次跑完多步。
+- **数据在你手里**：自己运行，不发遥测；每个 Agent 可限定配置、只读、随时撤销。
 
 ## 快速开始
 
-需要 Node.js 24+ 和 Chrome。
+需要 Node.js 24+ 和 Chrome。当前版本 **0.3.28**。
 
 ```sh
 npm install -g saltedfish
 saltedfish install
 ```
 
-`install` 启动服务、接入检测到的本机 Agent，并打印扩展目录。然后：
+`install` 启动服务、接入本机 Agent，并打印扩展目录。然后：
 
-1. 在每个要接入的 Chrome 配置里打开 `chrome://extensions`，开启“开发者模式”，“加载已解压的扩展程序”，选上面打印的扩展目录。
-2. 运行 `saltedfish dashboard` 打开管理页，在“浏览器”里给这个 Chrome 生成配对码，粘贴到扩展设置里。
-3. 在 Agent 里新开一个会话，让它用 SaltedFish。
+1. **装扩展**：在 `chrome://extensions` 开启“开发者模式”，“加载已解压的扩展程序”，选打印出的目录。
+2. **配对**：`saltedfish dashboard` 打开管理页，在“浏览器”里生成配对码，粘贴到扩展里。
+3. **开始用**：在 Agent 里新开一个会话，例如：
 
-常用命令：
+> 使用 SaltedFish。先列出浏览器配置，找到“工作”，只操作这个配置。新开一个标签页完成任务，最后核对页面结果。
+
+### 让服务器上的 Agent 操作你电脑上的 Chrome
+
+在 Linux 服务器上运行同样两条命令（默认监听内网 IP 的 18445 端口），再运行 `saltedfish dashboard`。在你的电脑上打开它打印的链接，生成配对码，下载扩展，加载到 Chrome 里并粘贴配对码。
+
+Agent 要和服务装在同一台电脑上。内网用的是不加密的 HTTP，跨公网要配证书，见 [安装与运维](docs/npm.md)。
+
+### 常用命令
 
 ```sh
 saltedfish status          # 服务状态
@@ -48,20 +107,40 @@ saltedfish rollback        # 切回上一兼容版本
 saltedfish logs --lines 100
 ```
 
-**服务装在哪**：Windows 和 macOS 默认只监听本机。Linux 默认监听内网 IP、端口 18445，别的电脑上的 Chrome 扩展可以连过来；这种模式用不加密的 HTTP，只适合信任的内网，公网部署要证书。不论哪种，Agent 的 `/mcp` 只接受服务所在电脑上的连接。详见 [安装与运维](docs/npm.md)。
+## 它怎么工作
+
+```mermaid
+flowchart LR
+  subgraph host["服务器，或你自己的电脑"]
+    a1["Claude Code"]
+    a2["Codex CLI"]
+    a3["OpenCode · pi · agy · …"]
+    svc["SaltedFish 服务<br/>授权 · 排队 · 操作记录 · 管理页"]
+  end
+  subgraph desk["你的电脑，可以不止一台"]
+    p1["Chrome 配置“工作” + 扩展"]
+    p2["Chrome 配置“个人” + 扩展"]
+  end
+  a1 --> svc
+  a2 -- MCP --> svc
+  a3 --> svc
+  svc <-- WebSocket --> p1
+  svc <--> p2
+  classDef core fill:#183f34,stroke:#183f34,color:#ffffff
+  class svc core
+```
+
+Agent 连服务的 MCP 入口，扩展主动连服务，服务负责授权、排队、记录和恢复。Windows 和 macOS 默认只监听本机；Linux 默认监听内网 IP，别的电脑上的 Chrome 可以连过来。Agent 的 `/mcp` 只接受服务所在电脑上的连接。
 
 ## 交给 Agent
 
-提示词示例：
-
-> 使用 SaltedFish。先列出浏览器配置，找到“工作”，只操作这个配置。新开一个标签页完成任务，最后核对页面结果。
-
-Agent 的典型流程：
-
 1. `chrome_profiles` 找到配置，`chrome_tabs` 看有哪些标签页。
-2. 写操作只能在本会话的标签组里：`chrome_new_tab` 开的标签页直接用，已有的标签页先 `chrome_claim_tab` 接管。读不受限。
+2. 写操作只能在本会话的标签组里：`chrome_new_tab` 开的标签页直接用，已有的先 `chrome_claim_tab` 接管。读不受限。
 3. `chrome_inspect`、`chrome_find` 读页面、找元素，`chrome_action` 点击和输入。结果里的 `pageChange` 看得出结果，就不用再读一次页面。
-4. 确定的多步操作交给 `chrome_batch`：
+4. 确定的多步操作交给 `chrome_batch`，失败即停。
+
+<details>
+<summary><code>chrome_batch</code> 示例</summary>
 
 ```json
 {
@@ -76,9 +155,28 @@ Agent 的典型流程：
 }
 ```
 
-批量操作失败即停。点击完成只代表输入事件发出去了，业务是否成功要看页面或网络结果。
+</details>
 
-工具共 64 个，默认列出 46 个；任务、流程这类不常用的在管理页给 Agent 打开“高级工具”后出现。schema 见 [src/tools.ts](src/tools.ts)，行为细节见 [浏览器工具语义](docs/interaction.md)。
+点击完成只代表输入事件发出去了，业务是否成功要看页面或网络结果。
+
+工具共 64 个，默认列出 46 个，其余在管理页给 Agent 打开“高级工具”后出现。schema 见 [src/tools.ts](src/tools.ts)，行为细节见 [浏览器工具语义](docs/interaction.md)。
+
+## 管理页
+
+配对浏览器、给 Agent 授权、看标签组和操作记录，都在 `saltedfish dashboard`。详见 [管理页功能](docs/product-features.md)。
+
+<table>
+<tr>
+<td width="33%"><img src=".github/assets/dashboard-overview.jpg" alt="管理页概览：连接浏览器、接入 Agent、在聊天里使用"></td>
+<td width="33%"><img src=".github/assets/dashboard-browsers.jpg" alt="浏览器页：每个 Chrome 配置单独连接，可以改名、查看标签页、暂停控制"></td>
+<td width="33%"><img src=".github/assets/dashboard-activity.jpg" alt="操作记录页：每次操作的工具、目标、时间和状态"></td>
+</tr>
+<tr>
+<td align="center">概览</td>
+<td align="center">浏览器</td>
+<td align="center">操作记录</td>
+</tr>
+</table>
 
 ## 能力
 
@@ -93,6 +191,7 @@ Agent 的典型流程：
 | 恢复 | 操作派发前写入 SQLite；进程被强杀或重启后保护仍在 |
 | 长结果 | 大 JSON 和图片落盘，分页读取 |
 | 用户接管 | 扩展里可以暂停；在 Chrome 里手动停止调试会暂停连接，不自动重新接管 |
+| 升级 | `saltedfish upgrade` 切换失败自动回退；手动加载的扩展在设置页一键更新，配对保留 |
 
 ## 安全与数据
 
@@ -107,6 +206,7 @@ Agent 的典型流程：
 ## 已知限制
 
 - 已在 Windows 和 Linux 上验证；macOS 没有验证分发。
+- 不设限说的是 SaltedFish 这个工具；Agent 所用模型和客户端自己的规则、审批不归它管。
 - Chrome 内部页面、其他扩展的页面、系统原生窗口、验证码和系统授权对话框没有自动化保证。
 - 网页能观察到 DOM 和输入事件；不承诺网站识别不出自动化操作。
 - Agent 连着时，Chrome 每个标签页顶部有一条“正在调试此浏览器”的提示条。Chrome 启动时带 `--silent-debugger-extension-api` 可以去掉，代价见 [安装与运维](docs/npm.md)。
