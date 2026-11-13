@@ -186,3 +186,28 @@ test('陈旧记录的 PID 恰好是当前进程自己（容器重启后 PID 重�
     assert.equal(status.pidReused, true);
   } finally { await temp.cleanup(); }
 });
+
+test('私有控制口只取高位端口：port=0 可能分到 5060 这类 fetch 拒连的端口，CLI 就管不了服务；被占用换一个，参数错误不重试', async () => {
+  // 前提：Node 的 fetch 按规范拒绝 5060（SIP），不发起连接；动态端口段从 1024 起的电脑上 port=0 能分到它。
+  await assert.rejects(fetch('http://127.0.0.1:5060/', { signal: AbortSignal.timeout(2500) }), (error: any) => /bad port/.test(String(error?.cause?.message)));
+  const { createServer } = await import('node:http');
+  for (let i = 0; i < 20; i++) {
+    const server = createServer((_req, res) => res.end('ok'));
+    try {
+      const port = await runtime.listenControl(server);
+      assert.equal((server.address() as { port: number }).port, port);
+      assert.ok(port >= 49152 && port <= 65535, `控制口 ${port} 不在高位段`);
+      assert.equal(await (await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2500) })).text(), 'ok');
+    } finally { await new Promise(resolve => server.close(resolve)); }
+  }
+  const busy = createServer(), server = createServer(), taken = await freePort(), next = await freePort();
+  await new Promise<void>((resolve, reject) => { busy.once('error', reject); busy.listen(taken, '127.0.0.1', resolve); });
+  try {
+    const picks = [taken, next];
+    assert.equal(await runtime.listenControl(server, () => picks.shift()!), next);
+    assert.equal(picks.length, 0);
+  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => busy.close(resolve)); }
+  let calls = 0;
+  await assert.rejects(runtime.listenControl(createServer(), () => { calls++; return 70000; }), (error: any) => error?.code === 'ERR_SOCKET_BAD_PORT');
+  assert.equal(calls, 1);
+});

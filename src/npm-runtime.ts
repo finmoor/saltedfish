@@ -1,5 +1,6 @@
 import { access, chmod, copyFile, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import type { Server } from 'node:net';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -298,6 +299,16 @@ export async function control(record: z.infer<typeof Running>, action: 'status'|
   if(!r.ok)throw new Error(result.error||'服务管理请求失败。');
   if(result.instanceId!==record.instanceId||result.home!==record.home||result.role!==record.role)throw new Error('服务管理身份不匹配，未操作此进程。');
   return result;
+}
+// 私有控制口取 49152 起的高位随机端口，不用 port=0：动态端口段被改成从 1024 起的电脑上，系统会分到 5060、6000 这类
+// fetch 拒绝连接的端口（报 bad port），control 次次失败，status 只能报不可达，start、stop、升级都管不了这个服务。
+// 高位段里没有这类端口；Windows 上被系统保留的报 EACCES、被占用的报 EADDRINUSE，都换一个。
+export async function listenControl(server: Server, pick=()=>randomInt(49152,65536)) {
+  for(let attempt=0;;attempt++){
+    const port=pick();
+    try{await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',()=>{server.off('error',reject);resolve();});});return port;}
+    catch(e){if(attempt>=49||!['EADDRINUSE','EACCES'].includes((e as NodeJS.ErrnoException).code??''))throw e;}
+  }
 }
 export async function serviceStatus(home: string, role: Role) {
   const record=await runningRecord(home,role);const stopped=await exists(stopPath(home,role));

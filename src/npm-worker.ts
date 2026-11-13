@@ -4,7 +4,7 @@ import { startServer } from './http-server.js';
 import { startGateway } from './remote-gateway.js';
 import { loadConfig } from './config.js';
 import { equalToken } from './auth.js';
-import { active, atomicJson, dataPath, randomBytes, randomUUID, readJson, requireHome, retryFile, runPath, serviceStatus, VERSION, type Role } from './npm-runtime.js';
+import { active, atomicJson, dataPath, listenControl, randomBytes, randomUUID, readJson, requireHome, retryFile, runPath, serviceStatus, VERSION, type Role } from './npm-runtime.js';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -40,7 +40,7 @@ async function main() {
     finally{process.exit(0);}
   }
   try {
-    await new Promise<void>((resolve,reject)=>{controller.once('error',reject);controller.listen(0,'127.0.0.1',resolve);});
+    await listenControl(controller);
     await atomicJson(runPath(home,role),{role,home,token,instanceId,version:VERSION,pid:process.pid,startedAt,port:(controller.address() as {port:number}).port});
   }catch(e){await app.close();controller.close();throw e;}
   if('service' in app)app.server.once('adminShutdown',()=>void close());

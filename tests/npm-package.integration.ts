@@ -102,6 +102,7 @@ test('npm 分发在独立前缀真实安装，本机/网关/升级/一次信任�
       await command(['stop']);assert.equal((await status()).services[0].state,'stopped');await assert.rejects(clientProbe());assert.equal((await status()).services[0].state,'stopped');
       assert.notEqual((await command(['desktop-open',process.platform==='win32'?'invalid-settings-uri':`saltedfish-${config.port}://settings/remote`],true)).code,0);assert.equal((await status()).services[0].state,'stopped','非法地址/非Windows不能先启动服务');
       await command(['start']);assert.equal(await clientProbe(),baseVersion);
+      const control=(await json(path.join(home,'run/local.json'))).port;assert.ok(control>=49152,`私有控制口 ${control} 不在高位段，可能撞上 fetch 拒连的端口`);
     });
     if(process.platform==='win32')await check('状态记录短暂文件共享锁释放后继续读取，不误判离线',async()=>{
       const child=spawn('powershell.exe',['-NoProfile','-Command',"$h=[IO.File]::Open($env:SALTEDFISH_LOCK_FILE,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None); try { [Console]::WriteLine('locked'); [Console]::Out.Flush(); Start-Sleep -Milliseconds 500 } finally { $h.Dispose() }"],{windowsHide:true,env:{...process.env,SALTEDFISH_LOCK_FILE:path.join(home,'run/local.json')},stdio:['ignore','pipe','pipe']});
