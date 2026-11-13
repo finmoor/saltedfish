@@ -25,7 +25,7 @@ const html=`<!doctype html><meta charset="utf-8"><title>发布页</title>
 <div class="spacer"></div>
 </main>`;
 
-test('11-08 反馈：locator.inside 一步点候选、上传按旁边的文字定位、attached、只读等价写法、整页截图的固定元素、坐标点击带落点',{timeout:180000},async t=>{
+test('11-08 反馈：locator.inside 一步点候选、上传按旁边的文字定位、attached、只读等价写法、整页截图的固定元素、点击带落点',{timeout:180000},async t=>{
  const h=await interactionHarness(t,html);
 
  await t.test('话题候选：没有范围时页面别处的同名字会撞上；inside 限定在候选容器里（可以匹配多个），候选晚出来也等；find 的 selector 当 inside 用',async()=>{
@@ -63,8 +63,9 @@ test('11-08 反馈：locator.inside 一步点候选、上传按旁边的文字�
    assert.equal(direct.input,undefined,'直接给文件框时不多带说明');
    assert.equal((await call('chrome_wait',{selector:'input.semi-upload-hidden-input',state:'attached',timeoutMs:1000})).matched,true,'隐藏的文件框 attached 立刻成立');
    assert.equal((await raw('chrome_wait',{selector:'input.semi-upload-hidden-input',timeoutMs:300})).error?.code,'WAIT_TIMEOUT','默认 visible 照旧等不到');
+   // 往上碰到的那层有两个文件框：0.3.29 起点一下目标看页面打开哪个（见 interaction-feedback-1113）；空白处点了不打开选择框，照样不猜、列出候选。
    const far=await raw('chrome_upload',{selector:'#blank',paths:[cover]});
-   assert.equal(far.error?.code,'AMBIGUOUS_FILE_INPUT','往上碰到的那层有两个文件框，不猜');assert.match(far.error!.message,/目标附近有 2 个文件框/);
+   assert.equal(far.error?.code,'FILE_CHOOSER_NOT_OPENED');assert.equal(far.error?.outcome,'dispatched');assert.match(far.error!.message,/目标附近有 2 个文件框/);
    const none=await raw('chrome_upload',{selector:'header.topbar',paths:[cover]});
    assert.equal(none.error?.code,'NOT_FILE_INPUT','往上到 body 都没有');assert.match(none.error!.message,/往上 4 层都没有文件框/);
   }finally{await page.close();await rm(directory,{recursive:true,force:true});}
@@ -100,7 +101,7 @@ test('11-08 反馈：locator.inside 一步点候选、上传按旁边的文字�
   }finally{await page.close();}
  });
 
- await t.test('按坐标点击：结果带落点上的元素，点到空白一眼看得出；按 ref 点不带',async()=>{
+ await t.test('按坐标点击：结果带落点上的元素，点到空白一眼看得出；按 selector 点也带',async()=>{
   const {page,call}=await h.open();
   try{
    const blank=await page.$eval('#blank',e=>{const r=e.getBoundingClientRect();return {x:Math.round(r.x+20),y:Math.round(r.y+20)};});
@@ -109,7 +110,9 @@ test('11-08 反馈：locator.inside 一步点候选、上传按旁边的文字�
    const save=await page.$eval('#save',e=>{const r=e.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};});
    const hit=await call('chrome_action',{action:'click',...save,observe:false});
    assert.equal(hit.hit.role,'button');assert.equal(hit.hit.name,'保存');assert.equal(await page.evaluate(()=>(window as any).__saved),true);
-   assert.equal((await call('chrome_action',{action:'click',selector:'#save',observe:false})).hit,undefined);
+   // 0.3.29 起按 selector、ref、locator 点击也带落点（11-13 反馈）。
+   const byRef=await call('chrome_action',{action:'click',selector:'#save',observe:false});
+   assert.equal(byRef.hit?.role,'button');assert.equal(byRef.hit?.name,'保存');
   }finally{await page.close();}
  });
 });

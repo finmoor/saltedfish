@@ -22,7 +22,9 @@ const hitFunction = function(this: Element, x: number, y: number, ignored?: Elem
 export async function framePoint(tabId: number,args: JsonObject,deadline: number,access: Access) {
   const {send,evaluate}=access;let sessionId=args.sessionId as string|undefined;
   // 本 frame 里的检查和落点在页面运行时里做（FengPage.actionPoint），每次只传参数。
-  const local=await evaluate(tabId,elementExpression(args,`return FengPage.actionPoint(element,state,${JSON.stringify({action:String(args.action),scroll:args.scrollIntoView!==false,...(typeof args.dragSourceRef==='string'?{ignoredRef:args.dragSourceRef}:{}),...(Array.isArray(args.aim)?{aim:args.aim}:{})})});`),args,deadline) as Point & {cx?:number;cy?:number;width:number;height:number;documentId:string;ref:string;landedOn?:JsonObject};
+  const local=await evaluate(tabId,elementExpression(args,`return FengPage.actionPoint(element,state,${JSON.stringify({action:String(args.action),scroll:args.scrollIntoView!==false,...(typeof args.dragSourceRef==='string'?{ignoredRef:args.dragSourceRef}:{}),...(Array.isArray(args.aim)?{aim:args.aim}:{})})});`),args,deadline) as Point & {cx?:number;cy?:number;width:number;height:number;documentId:string;ref:string;landedOn?:JsonObject;hit?:JsonObject;scrolled?:JsonObject};
+  // 落点上的元素、点击前滚了多少，原样带回（iframe 里的是 iframe 里的元素和滚动）。
+  const extra={...(local.landedOn?{landedOn:local.landedOn}:{}),...(local.hit?{hit:local.hit}:{}),...(local.scrolled?{scrolled:local.scrolled}:{})};
   const roots=new Map<string,{parentId?:string}>();
   const add=(tree:any,parentId?:string)=>{const old=roots.get(tree.frame.id);roots.set(tree.frame.id,{parentId:parentId||tree.frame.parentId||old?.parentId});for(const child of tree.childFrames||[])add(child,tree.frame.id);};
   const rootTree=await send(tabId,'Page.getFrameTree');add(rootTree.frameTree);const rootId=(rootTree.frameTree as any).frame.id;
@@ -36,7 +38,7 @@ export async function framePoint(tabId: number,args: JsonObject,deadline: number
   let center:Point|undefined=local.cx!==undefined&&local.cy!==undefined?{x:local.cx,y:local.cy}:undefined;
   let inputPoint:Point|undefined=frameId===inputRoot?{...point}:undefined,inputCenter=inputPoint&&center;
   const centred=()=>inputCenter?{cx:inputCenter.x,cy:inputCenter.y}:{};
-  if(frameId===rootId)return {...point,...centred(),documentId:local.documentId,ref:local.ref,...(local.landedOn?{landedOn:local.landedOn}:{})};
+  if(frameId===rootId)return {...point,...centred(),documentId:local.documentId,ref:local.ref,...extra};
   // 子会话里可能混有没有 Page 域的目标（dedicated worker 等）或刚刚分离的会话：读不出 frame 树就跳过，不让整次动作抛出未分类的原始错误。
   // 跳过不会掩盖缺失的父链：目标的祖先 frame 若因此不在 roots 里，下面的循环会按 UNKNOWN_FRAME 在派发前明确拒绝。
   for(const child of access.sessions()){try{const tree=await send(tabId,'Page.getFrameTree',{},child);add(tree.frameTree);}catch{/* 非页面类或已失效的会话。 */}}
@@ -68,5 +70,5 @@ export async function framePoint(tabId: number,args: JsonObject,deadline: number
     } finally {await send(tabId,'Runtime.releaseObject',{objectId},sessionId).catch(()=>{});await send(tabId,'Runtime.releaseObject',{objectId:doc.objectId},sessionId).catch(()=>{});}
   }
   if(!inputPoint)throw new BrowserError('FRAME_GEOMETRY','输入目标与 frame 链不一致，未派发输入。',{phase:'precondition',outcome:'not_dispatched'});
-  return {...inputPoint,...centred(),documentId:local.documentId,ref:local.ref,...(local.landedOn?{landedOn:local.landedOn}:{})};
+  return {...inputPoint,...centred(),documentId:local.documentId,ref:local.ref,...extra};
 }

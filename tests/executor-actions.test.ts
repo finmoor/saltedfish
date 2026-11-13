@@ -118,7 +118,13 @@ test('scroll 带 selector：把滚轮发在该元素的中心而不是视口 (0,
   const wheel = page.mouseEvents.at(-1)!;
   assert.deepEqual([wheel.type, wheel.x, wheel.y, wheel.deltaX, wheel.deltaY], ['mouseWheel', 200, 300, 0, 300]);
   assert.deepEqual(result, { scrolled: true, x: 200, y: 300, deltaX: 0, deltaY: 300 });
-  assert.ok(list.scrolled >= 1, '先把元素滚到视野内再取坐标');
+  assert.equal(list.scrolled, 0, '元素完整在视口里，不滚动');
+  // 视口外的元素先滚进视口再取坐标（假元素滚动后换到视口里的位置）。
+  const far = page.element('far', { left: 100, top: 900, right: 300, bottom: 1000 });
+  far.scrollIntoView = () => { far.scrolled++; far.rect = { left: 100, top: 350, right: 300, bottom: 450, width: 200, height: 100 }; };
+  await run(tabId, { action: 'scroll', selector: '#far', deltaY: 10 });
+  assert.equal(far.scrolled, 1, '视口外的先滚进来');
+  assert.equal(page.mouseEvents.at(-1)!.y, 400);
   list.disabled = true;
   await run(tabId, { action: 'scroll', selector: '#list', deltaY: 10, autoWait: false });
   assert.equal(page.mouseEvents.at(-1)!.y, 300);

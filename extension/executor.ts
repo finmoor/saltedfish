@@ -342,6 +342,8 @@ function waitScene(context: JsonObject) {
   if (Array.isArray(context.closestText) && context.closestText.length) parts.push(`最接近的文字：${context.closestText.map(text => JSON.stringify(text)).join('、')}`);
   if (typeof context.matches === 'number') parts.push(context.matches ? `匹配的元素 ${context.matches} 个，看得见的 ${context.visible} 个` : '没有匹配的元素');
   else if (context.lookup) parts.push(`定位失败（${String(context.lookup)}）`);
+  const attribute = context.attribute as { name?: string; values?: (string | null)[] } | undefined;
+  if (attribute?.name && Array.isArray(attribute.values) && attribute.values.length) parts.push(`它们的 ${attribute.name} 现在${attribute.values.map(value => value === null ? '没有这个属性' : `是 ${JSON.stringify(value)}`).join('、')}`);
   if (Array.isArray(context.stillVisible) && context.stillVisible.length) parts.push(`还看得见：${(context.stillVisible as JsonObject[]).map(item => `${item.role ? `[${String(item.role)}]` : ''}${item.name ? `「${String(item.name)}」` : ''} ref ${String(item.ref)}`).join('、')}，要等其中一个消失就按它的 ref 等`);
   return parts.join('；') + '。';
 }
@@ -599,23 +601,18 @@ async function dispatchOperation(operation: string, args: JsonObject, deadline: 
   if (operation === 'page.upload') {
     const count=Array.isArray(args.fileIds)?args.fileIds.length:(args.paths as string[]).length;
     // 目标可以是文件框，也可以是看得见的上传按钮、区域（用它里面或最近的那个文件框，见 page-runtime 的 uploadTarget）。目标还没出现就等，和 chrome_action 一样。
-    let prepared:{ref:string;input?:JsonObject};
+    let prepared:{ref:string;input?:JsonObject;chooser?:ChooserTarget};
     for(;;){
-      try{prepared=await evaluateInternal(tabId,elementExpression(args,`return FengPage.uploadTarget(element,${count});`),args,deadline) as typeof prepared;break;}
+      try{prepared=await evaluateInternal(tabId,elementExpression(args,`return FengPage.uploadTarget(element,${count},true);`),args,deadline) as typeof prepared;break;}
       catch(error){if(errorInfo(error).code!=='ELEMENT_NOT_FOUND'||Date.now()+UPLOAD_POLL_MS>=deadline-UPLOAD_RESERVE_MS)throw error;await sleep(UPLOAD_POLL_MS);}
     }
-    args={...args,selector:undefined,locator:undefined,ref:prepared.ref};
-    const remote = await evaluateInternal(tabId, elementExpression(args, 'return element;'), args, deadline, false) as JsonObject;
-    if (!remote.objectId) throw new BrowserError('ELEMENT_NOT_FOUND', '未找到文件输入框。');
-    try { dialogs.assert(tabId); if(epoch!==controlEpoch||Date.now()>deadline)throw new BrowserError('CANCELLED','控制已失效，未写入文件输入框。',NOT_DISPATCHED);
-      if(args.fileIds)return await uploadContent(args.fileIds,String(remote.objectId),(method,params)=>send(tabId,method,params,sessionId),async()=>{dialogs.assert(tabId);if(epoch!==controlEpoch||Date.now()>deadline)throw new BrowserError('CANCELLED','控制已失效，未设置网页文件。',NOT_DISPATCHED);await assertNotAdminPage(tabId,args);});
-      await send(tabId, 'DOM.setFileInputFiles', { files: args.paths, objectId: remote.objectId }, sessionId);
-      // 本机路径由 Chrome 自己读：读回文件名和大小，对不上说明路径不在这台电脑或文件被换过，页面可能已经开始处理，按结果不明报告。
-      const listed=await send(tabId,'Runtime.callFunctionOn',{objectId:remote.objectId,functionDeclaration:'function(){return Array.from(this.files||[],f=>({name:f.name,size:f.size}));}',returnByValue:true},sessionId).catch(()=>undefined) as JsonObject|undefined;
-      const files=(listed?.result as JsonObject|undefined)?.value as {name:string;size:number}[]|undefined,expected=args.expectedFiles as {name:string;size:number}[]|undefined;
-      if(expected&&files&&(files.length!==expected.length||files.some((file,index)=>file.name!==expected[index]!.name||file.size!==expected[index]!.size)))throw new BrowserError('UPLOAD_FILE_MISMATCH','Chrome 读到的文件和服务核对的不一致（名称或大小不同），浏览器可能不在服务这台电脑上。页面可能已开始处理，先核查页面，不要重复上传。',{phase:'execution',outcome:'unknown'});
-      return {...(files?{files}:{}),...(prepared.input?{input:prepared.input}:{})}; }
-    finally { await send(tabId, 'Runtime.releaseObject', { objectId: remote.objectId }, sessionId).catch(() => {}); }
+    // 附近几个文件框分不出用哪个：点一下目标，用页面自己打开的那个。点击发出以后，之后的失败都不是“未派发”。
+    if(prepared.chooser){
+      const chosen=await uploadByChooser(tabId,args,prepared.chooser,count,deadline,epoch);
+      try{return await setUploadFiles(tabId,{...args,selector:undefined,locator:undefined,ref:chosen.ref},chosen,deadline,epoch);}
+      catch(error){const info=errorInfo(error);if(info.outcome!=='not_dispatched')throw error;throw new BrowserError(info.code,`已经点了上传区，${info.message}`,{phase:'execution',outcome:'dispatched',...(info.detail?{detail:info.detail}:{})});}
+    }
+    return setUploadFiles(tabId,{...args,selector:undefined,locator:undefined,ref:prepared.ref},prepared,deadline,epoch);
   }
   if (operation === 'page.wait') {
     if (args.expression) await assertCompiles(tabId, String(args.expression), args, deadline);
@@ -816,6 +813,70 @@ async function screenshot(tabId: number, args: JsonObject, deadline: number) {
   return { mimeType: 'image/png', data, coordinates: { cssPixels: true, ...located, ...(scale !== 1 ? { scale } : {}) } };
 }
 
+// 把文件设进已经确定的那个文件框（args.ref），读回文件名和大小。
+async function setUploadFiles(tabId:number,args:JsonObject,prepared:{input?:JsonObject},deadline:number,epoch:number){
+  const sessionId=args.sessionId as string|undefined;
+  const remote = await evaluateInternal(tabId, elementExpression(args, 'return element;'), args, deadline, false) as JsonObject;
+  if (!remote.objectId) throw new BrowserError('ELEMENT_NOT_FOUND', '未找到文件输入框。');
+  try { dialogs.assert(tabId); if(epoch!==controlEpoch||Date.now()>deadline)throw new BrowserError('CANCELLED','控制已失效，未写入文件输入框。',NOT_DISPATCHED);
+    if(args.fileIds){const result=await uploadContent(args.fileIds,String(remote.objectId),(method,params)=>send(tabId,method,params,sessionId),async()=>{dialogs.assert(tabId);if(epoch!==controlEpoch||Date.now()>deadline)throw new BrowserError('CANCELLED','控制已失效，未设置网页文件。',NOT_DISPATCHED);await assertNotAdminPage(tabId,args);});return prepared.input&&result&&typeof result==='object'?{...result as JsonObject,input:prepared.input}:result;}
+    await send(tabId, 'DOM.setFileInputFiles', { files: args.paths, objectId: remote.objectId }, sessionId);
+    // 本机路径由 Chrome 自己读：读回文件名和大小，对不上说明路径不在这台电脑或文件被换过，页面可能已经开始处理，按结果不明报告。
+    const listed=await send(tabId,'Runtime.callFunctionOn',{objectId:remote.objectId,functionDeclaration:'function(){return Array.from(this.files||[],f=>({name:f.name,size:f.size}));}',returnByValue:true},sessionId).catch(()=>undefined) as JsonObject|undefined;
+    const files=(listed?.result as JsonObject|undefined)?.value as {name:string;size:number}[]|undefined,expected=args.expectedFiles as {name:string;size:number}[]|undefined;
+    if(expected&&files&&(files.length!==expected.length||files.some((file,index)=>file.name!==expected[index]!.name||file.size!==expected[index]!.size)))throw new BrowserError('UPLOAD_FILE_MISMATCH','Chrome 读到的文件和服务核对的不一致（名称或大小不同），浏览器可能不在服务这台电脑上。页面可能已开始处理，先核查页面，不要重复上传。',{phase:'execution',outcome:'unknown'});
+    return {...(files?{files}:{}),...(prepared.input?{input:prepared.input}:{})}; }
+  finally { await send(tabId, 'Runtime.releaseObject', { objectId: remote.objectId }, sessionId).catch(() => {}); }
+}
+
+interface ChooserTarget { target:string; candidates:JsonObject[]; total:number; text:string }
+// 点完多久还没打开选择框就算没打开：页面一般在点击的处理函数里同步调 input.click()。
+const CHOOSER_WAIT_MS=2000;
+// 上传区里有几个文件框、分不出用哪个（例如 Semi Design 的 Upload 自带主框和替换框）：像用户一样点一下目标，看页面自己打开哪个文件框的选择框。
+// 开着 CDP 的选择框拦截时 Chrome 不弹系统选择框，Page.fileChooserOpened 带着那个文件框的 backendNodeId；拦截只在这次点击前后开着。
+// 点击走普通点击的整条路（可见、遮挡、拟人轨迹、后台标签页焦点模拟、同窗口排队）。没打开选择框就报出候选，不猜；点击已经发出，所以是“已派发”。
+async function uploadByChooser(tabId:number,args:JsonObject,found:ChooserTarget,count:number,deadline:number,epoch:number):Promise<{ref:string;input:JsonObject}>{
+  const sessionId=args.sessionId as string|undefined;
+  let opened:JsonObject|undefined,notify=()=>{};
+  const listener:Parameters<typeof chrome.debugger.onEvent.addListener>[0]=(source,method,params)=>{if(source.tabId===tabId&&(source.sessionId||undefined)===sessionId&&method==='Page.fileChooserOpened'&&!opened){opened=(params||{}) as JsonObject;notify();}};
+  const ambiguous=(reason:string)=>new BrowserError('AMBIGUOUS_FILE_INPUT',`目标附近有 ${found.total} 个文件框，没有上传：${found.text}。${reason}定位到离要用的那个更近的按钮或区域，或用其中一个 ref。`,{...NOT_DISPATCHED,detail:{candidates:found.candidates,total:found.total}});
+  try{await send(tabId,'Page.setInterceptFileChooserDialog',{enabled:true},sessionId);}
+  catch(error){throw ambiguous(`Chrome 不让拦截文件选择框（${failureText(error)}），没法点上传区来判断。`);}
+  chrome.debugger.onEvent.addListener(listener);
+  let clicked:JsonObject;
+  try{
+    const click={...args,action:'click',selector:undefined,locator:undefined,ref:found.target,paths:undefined,fileIds:undefined,expectedFiles:undefined};
+    const run=()=>action(tabId,click,deadline,epoch) as Promise<JsonObject>;
+    clicked=await (viewportHeld.has(tabId)?run():withViewport(tabId,deadline,run));
+    const until=Math.min(deadline,Date.now()+CHOOSER_WAIT_MS);
+    if(!opened)await new Promise<void>(resolve=>{const timer=setTimeout(resolve,Math.max(0,until-Date.now()));notify=()=>{clearTimeout(timer);resolve();};});
+  }finally{
+    chrome.debugger.onEvent.removeListener(listener);
+    await send(tabId,'Page.setInterceptFileChooserDialog',{enabled:false},sessionId).catch(()=>{});
+  }
+  const hit=clicked.hit as JsonObject|undefined,where=hit?`（落在 ${String(hit.selector)}${hit.name?`「${String(hit.name)}」`:hit.text?`「${String(hit.text)}」`:''}）`:'';
+  const after={phase:'execution' as const,outcome:'dispatched' as const,detail:{candidates:found.candidates,total:found.total,click:{x:clicked.x,y:clicked.y,...(hit?{hit}:{})}}};
+  if(!opened)throw new BrowserError('FILE_CHOOSER_NOT_OPENED',`点了目标${where}，页面没有打开文件选择框，没有上传。目标附近有 ${found.total} 个文件框：${found.text}。这次点击可能有别的效果，先看页面，再用其中一个 ref 上传；不要重复点击。`,after);
+  if(typeof opened.backendNodeId!=='number')throw new BrowserError('FILE_CHOOSER_UNSUPPORTED',`点了目标${where}，页面打开的选择框不来自 input[type=file]（可能是 showOpenFilePicker），没法设文件，没有上传。先看页面，再用候选的 ref 上传：${found.text}。`,after);
+  if(epoch!==controlEpoch||Date.now()>deadline)throw new BrowserError('CANCELLED','已经点了上传区，控制已失效，没有写入文件。先看页面。',after);
+  let objectId:string|undefined;
+  try{
+    const resolved=await send(tabId,'DOM.resolveNode',{backendNodeId:opened.backendNodeId,executionContextId:await isolated.get(tabId,args,deadline)},sessionId);
+    objectId=(resolved.object as JsonObject|undefined)?.objectId as string|undefined;
+    if(!objectId)throw new Error('没有对象');
+    const described=await send(tabId,'Runtime.callFunctionOn',{objectId,functionDeclaration:`function(){return FengPage.chosenUpload(this,${count},${JSON.stringify(found.target)});}`,returnByValue:true},sessionId);
+    const value=(described.result as JsonObject|undefined)?.value as {ref?:string;input?:JsonObject;error?:{code:string;message:string}}|undefined;
+    if(value?.error)throw new BrowserError(value.error.code,`点了目标${where}，${value.error.message}`,after);
+    if(!value?.ref||!value.input)throw new Error('读不出文件框');
+    return {ref:value.ref,input:value.input};
+  }catch(error){
+    if(error instanceof BrowserError)throw error;
+    throw new BrowserError('FILE_CHOOSER_UNSUPPORTED',`点了目标${where}，页面打开了选择框，但找不到它所属的文件框（${failureText(error)}），没有上传。先看页面，再用候选的 ref 上传：${found.text}。`,after);
+  }finally{if(objectId)await send(tabId,'Runtime.releaseObject',{objectId},sessionId).catch(()=>{});}
+}
+
+// 正在 withViewport 里跑的标签页：批次里有视觉动作时整批已经占着窗口队列，里面的上传再点击就不能再排一次队（队列不可重入）。
+const viewportHeld=new Set<number>();
 async function withViewport<T>(tabId: number, deadline: number, run: () => Promise<T>): Promise<T> {
   const tab = await chrome.tabs.get(tabId);
   return windowLocks.run(tab.windowId, deadline, () => useViewport(tabId, tab.windowId, deadline, run));
@@ -847,7 +908,8 @@ async function useViewport<T>(tabId: number, windowId: number, deadline: number,
       await sleep(50);
     }
     if (!usable) throw new BrowserError('NO_VIEWPORT', '窗口没有可用的画面区域。请恢复此 Chrome 窗口后再操作。', NOT_DISPATCHED);
-    return await run();
+    viewportHeld.add(tabId);
+    try { return await run(); } finally { viewportHeld.delete(tabId); }
   } finally {
     if (emulated && attached.has(tabId)) await send(tabId, 'Emulation.setFocusEmulationEnabled', { enabled: false }).then(() => focusEmulated.delete(tabId), () => {});
     if (restored) {
@@ -870,7 +932,7 @@ async function action(tabId: number, args: JsonObject, deadline: number, epoch: 
 
 async function prepareTarget(tabId:number,args:JsonObject,deadline:number,epoch:number){
   let id:unknown;
-  const pointer=['click','doubleClick','drag','setChecked','hover','scroll'].includes(String(args.action));let previous:Awaited<ReturnType<typeof elementPoint>>|undefined,last='ELEMENT_NOT_FOUND',lastInfo:ReturnType<typeof errorInfo>|undefined;
+  const pointer=['click','doubleClick','drag','setChecked','hover','scroll'].includes(String(args.action));let previous:Awaited<ReturnType<typeof elementPoint>>|undefined,last='ELEMENT_NOT_FOUND',lastInfo:ReturnType<typeof errorInfo>|undefined,scrolled:{x:number;y:number}|undefined;
   const retryable=new Set(['ELEMENT_NOT_FOUND','ELEMENT_NOT_VISIBLE','ELEMENT_DISABLED','NOT_EDITABLE','ELEMENT_OBSCURED','ELEMENT_UNSTABLE','OPTION_NOT_FOUND','OPTION_DISABLED']);
   // 光标关着时探针一个字节都不变；开着才顺带读目标的框。同进程 iframe 的框是 iframe 里的坐标，对不上 Overlay，不画。
   const framed=!pointer&&cursor.enabled&&args.contextId===undefined,sessionId=args.sessionId as string|undefined;
@@ -892,9 +954,12 @@ async function prepareTarget(tabId:number,args:JsonObject,deadline:number,epoch:
       // 像真人一样操作时光标跟着轨迹走（每个 mouseMoved 都告诉它），这里不先滑过去。
       if(pointer&&args.action!=='drag'&&!args.aim)cursor.aim(tabId,sessionId,candidate as Awaited<ReturnType<typeof elementPoint>>);
       else if(framed&&box)cursor.frame(tabId,sessionId,box);
-      if(!pointer||args.autoWait===false)return candidate;
+      // 第一次取点可能把目标滚进视口，之后核对稳定的几次不再滚：滚了多少记下来放进最后的落点。
+      const moved=(candidate as {scrolled?:{x:number;y:number}}).scrolled;if(moved)scrolled={x:(scrolled?.x||0)+moved.x,y:(scrolled?.y||0)+moved.y};
+      const withScroll=<T extends object>(point:T)=>scrolled&&(scrolled.x||scrolled.y)?{...point,scrolled}:point;
+      if(!pointer||args.autoWait===false)return withScroll(candidate);
       const point=candidate as Awaited<ReturnType<typeof elementPoint>>;
-      if(previous&&previous.ref===point.ref&&samePoint(previous,point))return point;
+      if(previous&&previous.ref===point.ref&&samePoint(previous,point))return withScroll(point);
       previous=point;last='ELEMENT_UNSTABLE';
     }catch(error){
       const read=beforeInput(error,args,deadline);if(read==='expired')break;
@@ -1103,7 +1168,9 @@ async function actionInput(tabId: number, args: JsonObject, deadline: number, ep
     const button = String(args.button || 'left');
     const buttons = button === 'right' ? 2 : button === 'middle' ? 4 : 1;
     // 按坐标点击：按下前读出落点上是什么，放进结果，点到空白处一眼看得出。只看顶层页面，读不到就不带。
-    const hit = !prepared && args.contextId === undefined && !args.sessionId ? await evaluateInternal(tabId, `(()=>{return FengPage.pointTarget(${Number(coordinates.x)},${Number(coordinates.y)});})()`, args, deadline).catch(() => undefined) as JsonObject | null | undefined : undefined;
+    // 按 ref、locator 点击时落点上的元素在取点时就读好了（FengPage.actionPoint），跟着鼠标挪过去的就用最后那次。
+    const hit = prepared ? (point as { hit?: JsonObject }).hit : args.contextId === undefined && !args.sessionId ? await evaluateInternal(tabId, `(()=>{return FengPage.pointTarget(${Number(coordinates.x)},${Number(coordinates.y)});})()`, args, deadline).catch(() => undefined) as JsonObject | null | undefined : undefined;
+    const scrolled = (prepared as { scrolled?: JsonObject } | undefined)?.scrolled;
     assertActive();markDispatched();
     const count=args.action==='doubleClick'?2:1;
     for(let clickCount=1;clickCount<=count;clickCount++){
@@ -1130,7 +1197,7 @@ async function actionInput(tabId: number, args: JsonObject, deadline: number, ep
       throw new BrowserError('CHECK_STATE_NOT_APPLIED','点击已发出，但未确认达到 checked 目标状态；请检查页面，不会再次点击。');
     }
     const landed=(prepared as {landedOn?:JsonObject}|undefined)?.landedOn;
-    return { clicked: true,...(count===2?{doubleClicked:true}:{}), ...coordinates, ...(hit?{hit}:{}), ...withModifiers, ...(landed?{landedOn:landed,note:'目标是容器，点击落在它中心的这个子元素上；要点别的子元素就定位那一个。'}:{}) };
+    return { clicked: true,...(count===2?{doubleClicked:true}:{}), ...coordinates, ...(hit?{hit}:{}), ...(scrolled?{scrolled}:{}), ...withModifiers, ...(landed?{landedOn:landed,note:'目标是容器，点击落在它中心的这个子元素上；要点别的子元素就定位那一个。'}:{}) };
   }
   throw new BrowserError('INVALID_ACTION', String(args.action));
 }

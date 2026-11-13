@@ -223,7 +223,8 @@ DOM 读取与语义定位逻辑构建成独立 bundle，经 `Page.createIsolated
 - 按 `ref` 等待 `state:"hidden"` 时，已移除的元素算隐藏；等待隐藏超时可用 `stillVisible` 列出仍可见的候选。
 - `chrome_find` 可返回 `within`、`layer` 和 `context`，帮助区分编辑器、浮层与同名候选。
 - `chrome_action` 支持 `postcondition`，满足时带 `url`、`title`；`type` 可带派发后读回的 `value`，不将它冒充请求值核验。动作结果中的 `pageChange` 是页面变化摘要，不是业务成功证明。
-- 上传目标不是文件框时，会检查关联 label、内部和向上最多四层内最近一层的文件框。多个候选返回 `AMBIGUOUS_FILE_INPUT`，不任意选择；结果可带实际文件框的 `input` 信息。
+- 上传目标不是文件框时，会检查关联 label、内部和向上最多四层内最近一层的文件框。向上那层有多个时，打开 CDP 文件选择框拦截、点一下目标，用页面自己打开的那个，不按类名或位置猜；没打开选择框返回 `FILE_CHOOSER_NOT_OPENED`（点击已派发）。目标本身含多个时返回 `AMBIGUOUS_FILE_INPUT`。结果可带实际文件框的 `input` 信息。
+- 按元素定位的指针动作只在目标不完整可见、或中心被挡住裁掉时才滚动（iframe 里照旧滚到正中），滚过的结果带 `scrolled`；点击结果带落点上的元素 `hit`。
 
 `chrome_evaluate` 和表达式等待的 `readOnly:true` 使用 Chrome 的 `throwOnSideEffect` 检查。被阻止时返回 `SIDE_EFFECT_BLOCKED`，可在写入暂停期间用于只读核对。顶层 `const` / `let` 因创建全局绑定而被拦时，会包进块作用域再试一次。有的页面用 core-js 一类补丁替换 `JSON.stringify` 等内置函数，Chrome 无法判定其副作用；扩展会检查相关内置函数并给出替代写法。只读执行不是通用 JavaScript 沙箱。
 

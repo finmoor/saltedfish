@@ -58,7 +58,7 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 
 可访问名称按 AccName 算法计算。定位的文字、名称、标签和占位符比较时合并空白，并按 NFKC 归一化；全角与半角兼容字符可匹配，返回原文不变。`testId` 对应 `data-testid`。
 
-`locator.text` 只保留最贴近文字的那一层，不同时返回包含它的外层容器。多个匹配不要猜：先收窄范围或获取候选，再使用 `ref`、`nth`。`AMBIGUOUS_SELECTOR`、`AMBIGUOUS_SCOPE` 的消息最多列出 5 个候选，结构化信息在 `detail.candidates`、`detail.total`。
+`locator.text` 只保留最贴近文字的那一层，不同时返回包含它的外层容器。多个匹配不要猜：先收窄范围或获取候选，再使用 `ref`、`nth`。`AMBIGUOUS_SELECTOR`、`AMBIGUOUS_SCOPE` 的消息最多列出 5 个候选，结构化信息在 `detail.candidates`、`detail.total`。带 `exact:false` 撞上多个、其中正好一个与 `text`、`name`、`label` 一字不差时，消息会提示去掉 `exact:false`，不替调用方选择。
 
 `chrome_find` 必须提供 `locator`；其 `selector` 是 `locator.inside` 的简写，不是独立目标定位。`selector` 与 `locator.inside` 同时提供返回 `INVALID_ARGUMENT`。`inside` 未匹配任何根时，查找结果带 `insideMatched:0`；动作的 `ELEMENT_NOT_FOUND` 也会说明范围为空。无效 CSS 返回 `INVALID_SELECTOR`。
 
@@ -129,7 +129,7 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 
 | `chrome_action.action` | 语义 |
 | --- | --- |
-| `click` / `doubleClick` | 元素定位或视口 `x/y`；按坐标点击时可带 `hit`，说明按下前落点上的顶层元素 |
+| `click` / `doubleClick` | 元素定位或视口 `x/y`；结果带 `hit`，说明按下前落点上的元素 |
 | `hover` | 移到元素或坐标，允许目标被禁用 |
 | `setChecked` | 指定 `checked`；已经满足时不点击，改变后核验；radio 不能通过点击取消 |
 | `drag` | 起点和 `to` 各用元素定位或坐标；共用源 `contextId/sessionId`，不跨 frame |
@@ -149,7 +149,9 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 
 `modifiers` 是位标志：Alt=1、Ctrl=2、Meta=4、Shift=8。支持 `click`、`doubleClick`、`drag`、`hover`、`scroll`、`press`，结果按适用路径回显。鼠标动作将标志放进每个鼠标事件，不单独派发修饰键的键盘事件；依赖键盘事件的页面使用 `press`。`fill`、`type`、`select` 等不支持非零 `modifiers`。
 
-`hit` 只用于未指定 frame 的顶层坐标点击、双击，含 `ref`、`selector`，以及可用的 `role`、`name` 或短文字。按元素定位的点击不带它。
+`hit` 含 `ref`、`selector`，以及可用的 `role`、`name` 或 40 字以内的短文字。按坐标点击只在未指定 frame 时带它，说明顶层页面落点上的元素；按 `selector`、`ref`、`locator` 点击在取落点时一起读出，不多一次调用，iframe 里的目标说明的是 iframe 里的元素。
+
+按元素定位的指针动作只在需要时滚动：目标完整在视口里、中心没被挡住或裁掉时不滚动，`chrome_find` 刚给的 `box` 仍然有效。目标不完整在视口里（比视口还大的则是中心不在视口里），或中心被固定顶栏一类元素挡住、被滚动容器裁掉，才把它滚到视口正中。iframe 里的目标照旧每次滚到正中：扩展只看得到这个 frame 自己的视口，iframe 本身可能在外层页面的视口外。滚动过的点击结果带 `scrolled:{x,y}`，是目标在视口里移动的距离（页面或所在滚动容器往下滚了多少），之前拿到的 `box` 和截图坐标要按它换算或重新获取。
 
 ### 自定义下拉 `choose`
 
@@ -330,7 +332,7 @@ contenteditable 编辑根未显式写 role 时按 `textbox` 处理，可用 `loc
 {"textMatches":"数量\\s*[\\d.]+"}
 ```
 
-`WAIT_TIMEOUT` 尽可能带现场：当前 `url`、`title`、`loading`；等文字时有最多 3 段 `closestText`；等元素时有 `matches`、`visible`；等隐藏时有最多 3 个 `stillVisible`（引用、角色、名称）。后置检查超时也采用这些诊断。
+`WAIT_TIMEOUT` 尽可能带现场：当前 `url`、`title`、`loading`；等文字时有最多 3 段 `closestText`；等元素时有 `matches`、`visible`；等隐藏时有最多 3 个 `stillVisible`（引用、角色、名称）；带 `attribute` 时有匹配元素这个属性现在的值 `attribute:{name,values}`（最多 3 个不同的值，没有该属性为 `null`），消息里写成“data-mention 现在是 "activity"”这样。后置检查超时也采用这些诊断。
 
 单次 `chrome_wait` 最多 300 秒；批次 `page.wait.timeoutMs` 范围 100–300000，且受整批期限限制。客户端工具期限可能更短；`saltedfish connect` 配置的超时约 320–330 秒，不代表每个客户端都会持续同步等待。长作业使用 `chrome_job_start` 加分段 `chrome_job_status`。
 
@@ -523,9 +525,15 @@ Chrome 的试跑中止不会进入页面 `catch/finally`。`Promise`、async 函
 2. 目标内部的文件框，包括 open Shadow DOM。
 3. 向上最多 4 层，停在首次含文件框的祖先，不继续扩大到整个页面。
 
-该层存在多个文件框返回 `AMBIGUOUS_FILE_INPUT`，列出候选、不上传；都没有返回 `NOT_FILE_INPUT`。可定位更近的区域，或直接用候选 `ref`。间接定位成功时结果带 `input`，包含实际文件框的 `ref`、`selector`，以及可用的 `accept`、`multiple`、区域文字 `area`；直接定位文件框时不带。
+都没有返回 `NOT_FILE_INPUT`。目标本身含有多个文件框（定位的是大容器）时返回 `AMBIGUOUS_FILE_INPUT`，列出候选、不上传。
 
-目标尚未出现时等待，预留约 2 秒设置文件和回读。禁用文件框或不支持多文件的目标明确拒绝，不任意选择别处的文件框。这种区域定位需要扩展 0.3.26；更早扩展只认文件框本身，失败会提示更新。
+向上找到的那层有多个文件框时（常见于一个上传组件自带主文件框和替换用的文件框），像用户一样点一下目标，用页面自己打开的那个：点击前打开 CDP 的文件选择框拦截，Chrome 不弹系统选择框，`Page.fileChooserOpened` 给出页面调用的文件框，文件设进它，随后关闭拦截。点击走普通点击的整条流程（可见、遮挡、拟人轨迹、后台标签页焦点模拟、同窗口排队）。只在目标看得见、自身不含文件框时这样做；目标看不见或 Chrome 拒绝拦截时仍返回 `AMBIGUOUS_FILE_INPUT`、未派发。
+
+点击约 2 秒内页面没有打开选择框，返回 `FILE_CHOOSER_NOT_OPENED`；打开的不是 `input[type=file]` 的选择框（如 `showOpenFilePicker`），返回 `FILE_CHOOSER_UNSUPPORTED`。两者都是 `outcome:"dispatched"`：点击已经发出、文件没有设置，`detail` 带候选和点击落点。先看页面，再用候选 `ref` 上传，不要重复点击。
+
+间接定位成功时结果带 `input`，包含实际文件框的 `ref`、`selector`，以及可用的 `accept`、`multiple`、区域文字 `area`；经点击确定的另带 `via:"fileChooser"`。直接定位文件框时不带。
+
+目标尚未出现时等待，预留约 2 秒设置文件和回读。禁用文件框或不支持多文件的目标明确拒绝，不任意选择别处的文件框。这种区域定位需要扩展 0.3.26；更早扩展只认文件框本身，失败会提示更新。点击确定文件框需要扩展 0.3.29，更早的扩展在这种情况下照旧返回 `AMBIGUOUS_FILE_INPUT`。
 
 `chrome_profiles` 中的 `sameMachine:true` 表示服务按连接地址和用户代理判断浏览器与自己同机：连接来自本机地址，且浏览器操作系统与服务一致。此时检查路径后把真实路径交给 Chrome 的 `DOM.setFileInputFiles`，由 Chrome 读取，不经服务传内容，没有内容传输的大小上限，结果带 `transport:"path"`。回读文件名、大小不符返回 `UPLOAD_FILE_MISMATCH`、结果未知，页面可能已开始处理。管理员可配置 `uploadByPath:"never"` 始终传内容。
 
@@ -688,7 +696,7 @@ Agent 的文件访问许可应由它自己的 harness 管理。SaltedFish 不另
 | `init-script-v1` | 0.3.25 | 导航、新标签页 `initScript`；缺失则拒绝，连新空白标签页也不开 |
 | `interaction-v10` | 0.3.26 | 所有位置的 `locator.inside`、查找 `selector` 简写、`state:"attached"`；用到才检查 |
 
-页面动作的必需能力缺失时，服务在派发前返回 `EXTENSION_UPDATE_REQUIRED`，不让旧扩展忽略参数后执行错误语义。并非每个新增结果字段都有门控：`context`、编辑器 `within`、`type.value`、`toViewport`、`fixed`、`hit`、上传 `input` 在旧扩展中可能只是缺失。不要据字段缺失推断页面没有该状态。
+页面动作的必需能力缺失时，服务在派发前返回 `EXTENSION_UPDATE_REQUIRED`，不让旧扩展忽略参数后执行错误语义。并非每个新增结果字段都有门控：`context`、编辑器 `within`、`type.value`、`toViewport`、`fixed`、`hit`、`scrolled`、上传 `input` 在旧扩展中可能只是缺失。0.3.29 的几项行为也不加能力号、旧扩展照旧执行：按需滚动（旧扩展每次都滚到正中）、按元素点击带 `hit`、上传点击确定文件框、属性超时的实际值、`exact:false` 提示。不要据字段缺失推断页面没有该状态。
 
 扩展也检查服务的 `execution-v3`、`interaction-v4`、`interaction-v5`、`admin-origin-v1`，缺失返回 `SERVICE_UPDATE_REQUIRED`、拒绝执行。服务仍公布的 `execution-v2` 是协议遗留声明，不是当前执行要求。连接采用 v2 双向挑战应答，配对密钥只作 HMAC 密钥，不在握手线上明文发送；握手完成前不执行命令。
 

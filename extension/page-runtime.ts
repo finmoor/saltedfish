@@ -105,7 +105,9 @@ export function waitContext(options:any):any {
  if(options.selector||options.ref||options.locator){
   try{const all=pageDom({...options,mode:'all',allowHidden:true}) as Element[],shown=all.filter(element=>visibility(element).visible);result.matches=all.length;result.visible=shown.length;
    // 等隐藏却超时：列出还看得见的是哪几个，调用方好换成按其中一个的 ref 等。
-   if(options.state==='hidden'&&shown.length)result.stillVisible=candidateList(shown).listed.slice(0,3).map(({ref,role,name}:any)=>({ref,...(role?{role}:{}),...(name?{name}:{})}));}
+   if(options.state==='hidden'&&shown.length)result.stillVisible=candidateList(shown).listed.slice(0,3).map(({ref,role,name}:any)=>({ref,...(role?{role}:{}),...(name?{name}:{})}));
+   // 等属性等到超时：报出这些元素这个属性现在是什么（没有就是 null），调用方不用另读 DOM 就知道差在哪，比如 data-mention 是 activity 不是 #。
+   if(options.attribute?.name&&all.length)result.attribute={name:String(options.attribute.name).slice(0,200),values:[...new Set(all.map(element=>{const value=element.getAttribute(options.attribute.name);return value===null?null:value.slice(0,100);}))].slice(0,3)};}
   catch(error){result.lookup=(error as {code?:string}).code||(error as Error).name;}
  }
  return result;
@@ -369,7 +371,17 @@ export function pageDom(options:any):any {
   if(options.mode==='all')return found;
   if(options.mode==='resolve'){
     if(!options.ref&&!options.selector&&!options.locator)fail('ELEMENT_TARGET_REQUIRED');
-    if(found.length>1){const {listed,text}=candidateList(found);fail('AMBIGUOUS_SELECTOR',`匹配 ${found.length} 个元素，没有执行：${text}。用其中一个 ref${options.locator?'，或在 locator 里加 nth（0 起）':''}，或收窄条件。`,{candidates:listed,total:found.length});}
+    if(found.length>1){
+      const {listed,text}=candidateList(found),q=options.locator;
+      // 调用方传了 exact:false（包含匹配）才撞上这么多个，而其中正好只有一个和条件一字不差：提示去掉它，不替调用方挑。
+      let loose='';
+      if(q?.exact===false&&(q.text!==undefined||q.name!==undefined||q.label!==undefined)){
+        const same=(value:unknown,expected:unknown)=>expected===undefined||fold(value)===fold(expected);
+        const exact=found.filter(e=>same(e.textContent,q.text)&&same(name(e),q.name)&&same(label(e),q.label));
+        if(exact.length===1)loose=`其中只有 ref ${remember(exact[0]!,state)} 和条件一字不差：去掉 exact:false（默认就是精确匹配）就只剩它。`;
+      }
+      fail('AMBIGUOUS_SELECTOR',`匹配 ${found.length} 个元素，没有执行：${text}。用其中一个 ref${options.locator?'，或在 locator 里加 nth（0 起）':''}，或收窄条件。${loose}`,{candidates:listed,total:found.length});
+    }
     if(!found.length)fail('ELEMENT_NOT_FOUND',insideRoots?.size===0?'未找到目标元素：locator.inside 没匹配到任何元素。':'未找到目标元素。');remember(found[0]!,state);return found[0];
   }
   const offset=Number(options.offset||0),limit=Number(options.limit||50),elements=found.slice(offset,offset+limit).map(metadata);
@@ -531,7 +543,10 @@ function fileInputsIn(root:Element){
  const found:HTMLInputElement[]=[],visit=(node:Element|ShadowRoot)=>{for(const element of node.querySelectorAll('*')){if(isFileInput(element))found.push(element);if(element.shadowRoot)visit(element.shadowRoot);}};
  if(isFileInput(root))found.push(root);visit(root);if(root.shadowRoot)visit(root.shadowRoot);return found;
 }
-export function uploadTarget(element:Element,count:number){
+// 往上碰到的那层有几个文件框、分不出用哪个时（比如 Semi Design 的 Upload 自带主框和替换框，同在一层），chooser 为 true 就交给扩展：
+// 像用户一样点一下目标，看页面自己打开哪个文件框的选择框（见 executor 的 uploadByChooser）。只在目标看得见、自己里面没有文件框时这么做：
+// 目标本身就装着几个文件框，说明定位的是个大容器，点它中心是瞎点，照旧报出来。
+export function uploadTarget(element:Element,count:number,chooser=false){
  let input:HTMLInputElement|undefined,near:Element|undefined;
  if(isFileInput(element))input=element;
  else{
@@ -539,7 +554,16 @@ export function uploadTarget(element:Element,count:number){
   if(label&&isFileInput(label.control)){input=label.control;near=label;}
   for(let node:Element|null=element,depth=0;!input&&node&&depth<=UPLOAD_LEVELS&&node!==document.body&&node!==document.documentElement;node=parent(node),depth++){
    const inputs=fileInputsIn(node);
-   if(inputs.length>1){const {listed,text}=candidateList(inputs);fail('AMBIGUOUS_FILE_INPUT',`${node===element?'目标里面':'目标附近'}有 ${inputs.length} 个文件框，没有上传：${text}。定位到离要用的那个更近的按钮或区域，或用其中一个 ref。`,{candidates:listed,total:inputs.length});}
+   if(inputs.length>1){
+    const {listed,text}=candidateList(inputs);
+    if(chooser&&node!==element&&visibility(element).visible){
+     const usable=inputs.filter(item=>!item.disabled);
+     if(!usable.length)fail('ELEMENT_DISABLED','附近的文件框都被禁用了，没有上传。');
+     if(count>1&&!usable.some(item=>item.multiple))fail('MULTIPLE_FILES_NOT_ALLOWED');
+     return {chooser:{target:remember(element,pageState()),candidates:listed,total:inputs.length,text}};
+    }
+    fail('AMBIGUOUS_FILE_INPUT',`${node===element?'目标里面':'目标附近'}有 ${inputs.length} 个文件框，没有上传：${text}。定位到离要用的那个更近的按钮或区域，或用其中一个 ref。`,{candidates:listed,total:inputs.length});
+   }
    if(inputs.length===1){input=inputs[0];near=node;}
   }
   if(!input)fail('NOT_FILE_INPUT',`目标不是文件框，它里面和往上 ${UPLOAD_LEVELS} 层都没有文件框。定位上传按钮、上传区域里的字，或直接定位 input[type=file]。`);
@@ -551,11 +575,38 @@ export function uploadTarget(element:Element,count:number){
  const area=normalize((near as HTMLElement).innerText??near.textContent).slice(0,40),accept=input.getAttribute('accept');
  return {ref,input:{ref,selector:describe(input).selector,...(accept?{accept:accept.slice(0,100)}:{}),...(input.multiple?{multiple:true}:{}),...(area?{area}:{})}};
 }
+// 点了目标以后页面打开的选择框属于哪个文件框（扩展从 Page.fileChooserOpened 拿到，在隔离世界里解析成元素传进来）。不抛错，出错的情况带 error 返回：
+// 这时点击已经发出，扩展要把它报成“已派发”。area 用点的那个目标的文字。
+export function chosenUpload(input:unknown,count:number,targetRef:string){
+ if(!isFileInput(input))return {error:{code:'NOT_FILE_INPUT',message:'页面打开的选择框不属于文件框，没有上传。'}};
+ if(input.disabled)return {error:{code:'ELEMENT_DISABLED',message:'页面打开的选择框属于一个被禁用的文件框，没有上传。'}};
+ if(!input.multiple&&count>1)return {error:{code:'MULTIPLE_FILES_NOT_ALLOWED',message:'页面打开的文件框只接受一个文件，没有上传。'}};
+ const state=pageState(),ref=remember(input,state),target=state.elements.get(targetRef);
+ const area=target?normalize((target as HTMLElement).innerText??target.textContent).slice(0,40):'',accept=input.getAttribute('accept');
+ return {ref,input:{ref,selector:describe(input).selector,...(accept?{accept:accept.slice(0,100)}:{}),...(input.multiple?{multiple:true}:{}),...(area?{area}:{}),via:'fileChooser'}};
+}
 const shortName=(element:Element)=>{const value=normalize(computeAccessibleName(element)||element.textContent).slice(0,40);return value?`「${value}」`:'';};
+// 目标已经完整在视口里、中心点得到，就不滚动：真人不会先把看得见的东西滚到正中再点；滚动还会让页面收到 scroll 事件、触发懒加载，
+// 调用方刚从 find 拿到的 box 也跟着失效。看不全、比视口大且中心不在视口里、中心被裁掉或被挡住（比如压在固定顶栏下）才照旧滚到正中。
+// iframe 里照旧每次滚到正中：这里只看得到本 frame 的视口，iframe 自己可能在外层页面的视口外（跨源时也读不到外层），scrollIntoView 会连外层一起滚。
+function needsScroll(element:Element){
+  if(typeof top!=='undefined'&&(top as unknown)!==globalThis)return true;
+  const box=element.getBoundingClientRect(),cx=(box.left+box.right)/2,cy=(box.top+box.bottom)/2;
+  const inside=box.left>=0&&box.top>=0&&box.right<=innerWidth&&box.bottom<=innerHeight;
+  const big=box.width>innerWidth||box.height>innerHeight,centred=cx>=0&&cx<innerWidth&&cy>=0&&cy<innerHeight;
+  if(!inside&&!(big&&centred))return true;
+  return !!hitAt(element,cx,cy);
+}
 export function actionPoint(element:Element,state:{visible:boolean;disabled:boolean},options:{action:string;scroll:boolean;ignoredRef?:string;aim?:[number,number]}){
   if(state.disabled&&['click','doubleClick','drag','setChecked'].includes(options.action))fail('ELEMENT_DISABLED');
   if(!state.visible)notVisible(element);
-  if(options.scroll)element.scrollIntoView({block:'center',inline:'center',behavior:'instant'});
+  // 滚了就在结果里带 scrolled：目标在视口里移动了多少（页面或它所在的滚动容器往下滚了多少），之前拿到的 box、截图坐标都要按它换算或重新取。
+  let scrolled:{x:number;y:number}|undefined;
+  if(options.scroll&&needsScroll(element)){
+    const before=element.getBoundingClientRect();element.scrollIntoView({block:'center',inline:'center',behavior:'instant'});
+    const after=element.getBoundingClientRect(),dx=Math.round(before.left-after.left),dy=Math.round(before.top-after.top);
+    if(dx||dy)scrolled={x:dx,y:dy};
+  }
   const box=element.getBoundingClientRect();
   const left=Math.max(0,box.left),right=Math.min(innerWidth,box.right),top=Math.max(0,box.top),bottom=Math.min(innerHeight,box.bottom);
   if(right<=left||bottom<=top)notVisible(element,'ELEMENT_NOT_VISIBLE','outside_viewport');
@@ -582,7 +633,9 @@ export function actionPoint(element:Element,state:{visible:boolean;disabled:bool
     });
   }
   // 偏离中心时另带中心：核对“目标没动”比的是中心，悬停放大一类效果不会被当成移动。
-  const result:any={x,y,...(options.aim?{cx,cy}:{}),width:innerWidth,height:innerHeight,documentId:documentId(),ref:remember(element,pageState())};
+  const result:any={x,y,...(options.aim?{cx,cy}:{}),width:innerWidth,height:innerHeight,documentId:documentId(),ref:remember(element,pageState()),...(scrolled?{scrolled}:{})};
+  // 按 ref、locator 点击也带落点上的元素，和按坐标点击一样：调用方不用再截图就能确认点中的是什么。和取点在同一次执行里读，不多一次调用。
+  if(['click','doubleClick'].includes(options.action)){try{const hit=pointTarget(x,y);if(hit)result.hit=hit;}catch{/* 只是说明，读不到就不带，不影响点击。 */}}
   // 点容器的中心会落到里面某一项上：一组选项里落到某一项时不点，其他容器在结果里写明落到了哪里。
   if(['click','doubleClick'].includes(options.action)&&!element.matches(CHOICE)){
     const hit=deepHit(x,y),inside=hit&&hit!==element&&element.contains(hit)?hit:undefined;
