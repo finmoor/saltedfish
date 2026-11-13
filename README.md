@@ -1,15 +1,15 @@
 # SaltedFish
 
 <p align="center">
-  <img src=".github/assets/hero.png" width="100%" alt="SaltedFish：你在自己的标签页里做事，服务器上的 Claude Code 和本机的 Codex 在各自的标签组里后台操作，扩展里可以随时暂停">
+  <img src=".github/assets/hero.gif" width="100%" alt="SaltedFish 演示：服务器上没有浏览器，Agent 的光标从服务器终端出发，在你电脑上已登录的 Chrome 里点开邮件、逐字回复并发送">
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/saltedfish"><img src="https://img.shields.io/npm/v/saltedfish?label=npm&color=235d48" alt="npm 版本"></a>
+  <a href="https://www.npmjs.com/package/saltedfish"><img src="https://img.shields.io/npm/v/saltedfish?label=npm&color=1d2fe0" alt="npm 版本"></a>
   <a href="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml"><img src="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Node.js-24%2B-235d48" alt="Node.js 24+">
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-235d48" alt="Windows 和 Linux">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-235d48" alt="MIT 许可"></a>
+  <img src="https://img.shields.io/badge/Node.js-24%2B-1d2fe0" alt="Node.js 24+">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1d2fe0" alt="Windows 和 Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1d2fe0" alt="MIT 许可"></a>
 </p>
 
 <p align="center">
@@ -126,7 +126,7 @@ flowchart LR
   a3 --> svc
   svc <-- WebSocket --> p1
   svc <--> p2
-  classDef core fill:#183f34,stroke:#183f34,color:#ffffff
+  classDef core fill:#1d2fe0,stroke:#1d2fe0,color:#ffffff
   class svc core
 ```
 

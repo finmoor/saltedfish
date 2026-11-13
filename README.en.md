@@ -1,15 +1,15 @@
 # SaltedFish
 
 <p align="center">
-  <img src=".github/assets/hero.png" width="100%" alt="SaltedFish: you keep working in your own tab while Claude Code on a server and Codex on this PC work in background tabs inside their own tab groups, and you can pause them from the extension">
+  <img src=".github/assets/hero.gif" width="100%" alt="SaltedFish demo: the server has no browser, so the agent’s cursor leaves the server terminal and opens, answers and sends an email in the logged-in Chrome on your PC">
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/saltedfish"><img src="https://img.shields.io/npm/v/saltedfish?label=npm&color=235d48" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/saltedfish"><img src="https://img.shields.io/npm/v/saltedfish?label=npm&color=1d2fe0" alt="npm version"></a>
   <a href="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml"><img src="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Node.js-24%2B-235d48" alt="Node.js 24+">
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-235d48" alt="Windows and Linux">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-235d48" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/Node.js-24%2B-1d2fe0" alt="Node.js 24+">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1d2fe0" alt="Windows and Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1d2fe0" alt="MIT license"></a>
 </p>
 
 <p align="center">
@@ -128,7 +128,7 @@ flowchart LR
   a3 --> svc
   svc <-- WebSocket --> p1
   svc <--> p2
-  classDef core fill:#183f34,stroke:#183f34,color:#ffffff
+  classDef core fill:#1d2fe0,stroke:#1d2fe0,color:#ffffff
   class svc core
 ```
 
