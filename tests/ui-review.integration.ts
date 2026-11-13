@@ -128,8 +128,12 @@ test('常用辅助正文及键盘焦点满足真实计算颜色对比，窄屏�
   })()`) as { selector: string; color: string; background: string }[];
   for (const color of colors) assert.ok(contrast(color.color, color.background) >= 4.5, color.selector);
   await h.page.focus('#refresh-all');
-  const outline = await h.page.$eval('#refresh-all', e => getComputedStyle(e).outlineColor);
-  assert.ok(contrast(outline, 'rgb(246, 247, 241)') >= 3);
+  // 焦点框和按钮所在的底色比（概览页的按钮在蓝带上，别的页在白底上），不是和写死的页面底色比。
+  const outline = await h.page.$eval('#refresh-all', e => { let parent: Element | null = e.parentElement, background = ''; while (parent) { background = getComputedStyle(parent).backgroundColor; if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') break; parent = parent.parentElement; } return { color: getComputedStyle(e).outlineColor, background }; });
+  assert.ok(contrast(outline.color, outline.background) >= 3, `焦点框 ${outline.color} 在 ${outline.background} 上`);
+  await h.nav('accounts'); await h.page.focus('#refresh-all');
+  const plain = await h.page.$eval('#refresh-all', e => ({ color: getComputedStyle(e).outlineColor, background: getComputedStyle(document.documentElement).backgroundColor }));
+  assert.ok(contrast(plain.color, plain.background) >= 3, `白底上的焦点框 ${plain.color}`);
   await h.page.setViewport({ width: 390, height: 844 }); await h.nav('tasks'); await h.page.click('#task-composer summary');
   const widths = await h.page.evaluate(() => ({ target: document.querySelector('.step-target')!.getBoundingClientRect().width, form: document.querySelector('#task-form')!.getBoundingClientRect().width }));
   assert.ok(widths.target >= widths.form * 0.9, `field ${widths.target}, form ${widths.form}`);

@@ -183,11 +183,15 @@ test('扩展弹窗里的保存结果提示：成功与失败文字都满足对�
   }
 });
 
-test('扩展弹窗的连接状态条：出错时换成红色系，对比度不低于 4.5:1；正常状态仍是绿色系', () => {
+test('扩展弹窗的连接状态条：出错时换成红色系，对比度不低于 4.5:1；正常状态不套红底', () => {
   const rules = parseCss(read('extension/options.css')), sheet = new Sheet(rules, 380), base: Node[] = [{ tag: 'html' }, { tag: 'body' }, { tag: 'main' }];
   const status = (state: string) => sheet.style([...base, { tag: 'div', id: 'status', attrs: { 'data-state': state } }]);
   const failing = status('error'), normal = status('connected');
   assert.ok(failing.color && failing.background && normal.color && normal.background, '状态条的颜色没解析到');
   assert.notEqual(failing.background, normal.background, '出错状态不能和已连接长得一样');
   for (const [name, { color, background }] of [['error', failing], ['connected', normal]] as const) assert.ok(contrast(color!, background!) >= 4.5, `${name} 对比度 ${contrast(color!, background!).toFixed(2)}`);
+});
+
+test('管理页的图标和扩展图标是同一张图（管理页的内容安全策略不允许 data: 图片，所以单独放一份）', () => {
+  assert.deepEqual(readFileSync(path.join(projectDir, 'ui/icon.png')), readFileSync(path.join(projectDir, 'extension/icon-128.png')));
 });

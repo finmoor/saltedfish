@@ -77,7 +77,7 @@ The basics are covered too:
 
 ## Quick start
 
-Requires Node.js 24+ and Chrome. Current version: **0.3.29**.
+Requires Node.js 24+ and Chrome. Current version: **0.3.30**.
 
 ```sh
 npm install -g saltedfish

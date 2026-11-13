@@ -8,7 +8,7 @@
 - 中文标语：Agent 干活，你当咸鱼
 - npm 包名及命令：`saltedfish`
 - MCP 连接名：`saltedfish`
-- 当前服务、npm 包和 Chrome 扩展使用同一版本号：`0.3.29`。
+- 当前服务、npm 包和 Chrome 扩展使用同一版本号：`0.3.30`。
 
 ## 保留的兼容标识
 

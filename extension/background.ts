@@ -31,7 +31,8 @@ const activities = new Map<string, { operation: string; tabId?: number; startedA
 async function updateActivity() {
   const config = await settings(), release = connectedService.extensionRelease, updateReady = !STORE_BUILD && status.state === 'connected' && !!release && isNewerVersion(release.version, chrome.runtime.getManifest().version);
   await chrome.action.setBadgeText({ text: !config.enabled ? 'OFF' : activities.size ? String(activities.size) : updateReady ? 'NEW' : status.state === 'connected' ? 'ON' : '' });
-  await chrome.action.setBadgeBackgroundColor({ color: activities.size ? '#be6225' : '#147d64' });
+  // 角标：蓝是连着，橙是 Agent 正在操作（和弹窗、管理页同一套颜色）
+  await chrome.action.setBadgeBackgroundColor({ color: activities.size ? '#c24100' : '#1d2fe0' });
   await chrome.action.setTitle({ title: `${config.label} · ${activities.size ? `${activities.size} 个操作进行中` : updateReady ? `有新版本 ${release.versionName}，点开更新` : status.message || status.state}` });
 }
 // 重载会关掉设置页，换一个新标签告诉用户更新好了。
@@ -167,7 +168,7 @@ async function connected(current: WebSocket, capabilities: string[],frame:JsonOb
   if (heartbeat) clearInterval(heartbeat);
   heartbeat = setInterval(() => { if (current.readyState === WebSocket.OPEN) current.send(JSON.stringify({ type: 'ping' })); }, 20000);
   await chrome.action.setBadgeText({ text: 'ON' });
-  await chrome.action.setBadgeBackgroundColor({ color: '#147d64' });
+  await chrome.action.setBadgeBackgroundColor({ color: '#1d2fe0' });
   await updateActivity();
 }
 

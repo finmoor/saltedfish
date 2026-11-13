@@ -1,4 +1,127 @@
-.target-picker{display:grid;grid-template-columns:1fr 2fr auto;gap:12px;align-items:end;margin:20px 0}.target-picker select{width:100%}details{margin:14px 0}summary{cursor:pointer;color:var(--accent);font-size:13px;padding:8px 0}#task-composer{border:1px solid var(--line);padding:8px 20px;background:#fffef8}#task-form{padding:8px 0 18px}#task-name{max-width:480px}.step-editor{display:grid;grid-template-columns:28px 115px 118px 1fr 1fr 40px;gap:8px;align-items:start;margin:16px 0}.step-editor .number{color:var(--muted);padding-top:31px;font:12px Consolas,monospace}.step-editor label{font-size:10px}.step-editor button{margin-top:23px;padding:8px}.task-options{display:flex;flex-wrap:wrap;gap:28px;margin:18px 0 0}.task-options .check{padding:0}.task-row{display:grid;grid-template-columns:minmax(0,1fr) 140px auto;gap:16px;align-items:center;padding:17px 0;border-bottom:1px solid var(--line)}.task-row h3{font-size:14px}.task-row .row-actions{flex-wrap:wrap;justify-content:flex-end}.task-row small,.workflow small,.setup-card small{display:block;color:var(--muted);font-size:11px}.progress-track{height:3px;background:#dae1d6;width:100%;margin-top:8px}.progress-track progress{display:block;width:100%;height:3px;accent-color:var(--accent)}.state.running,.state.queued{color:#317351}.state.needs_review,.state.interrupted,.state.paused{color:#a55f27}.workflow,.setup-card{border-top:1px solid var(--line);padding:20px 0}.workflow .parameter-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}.plan-preview{background:#e9eee2;padding:14px 18px;margin:12px 0;font-size:12px;overflow-wrap:anywhere}.plan-preview ol{padding-left:20px}.setup-card .path{font:11px/1.6 Consolas,monospace;color:var(--muted);overflow-wrap:anywhere;margin:6px 0 12px}.setup-card .row-actions{flex-wrap:wrap}.setup-card h3{font-size:15px}.setup-result{padding:12px 0;font-size:12px}.setup-history-row{padding:12px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;font-size:12px}dialog{width:min(820px,92vw);max-height:90vh;overflow:auto;border:1px solid #b8c9b8;background:#fffef8;color:var(--ink);padding:28px;border-radius:6px;box-shadow:0 20px 80px #173e312b}dialog::backdrop{background:#10251c70}dialog ol{padding-left:24px}dialog li{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}dialog code{font:11px Consolas,monospace;color:var(--muted)}dialog img{max-width:100%;height:auto;border:1px solid var(--line);margin-top:14px}#activity{scroll-margin-top:20px}.offline{color:#7a5128;background:#eee6dc}nav{max-height:65vh;overflow:auto}.brand-name{margin-bottom:35px}@media(max-width:1150px){.step-editor{grid-template-columns:22px 1fr 1fr 40px}.step-editor label:nth-of-type(3){grid-column:2}.step-editor button{grid-column:4;grid-row:1}.task-row{grid-template-columns:1fr 120px}.task-row .row-actions{grid-column:1/-1;justify-content:flex-start}.target-picker{grid-template-columns:1fr 1fr}.target-picker button{justify-self:start}}@media(max-width:650px){nav{flex-wrap:wrap;gap:6px 16px}.target-picker{grid-template-columns:1fr}.workflow .parameter-fields{grid-template-columns:1fr}.step-editor{grid-template-columns:18px 1fr 36px}.step-editor label:nth-of-type(2),.step-editor label:nth-of-type(3),.step-editor label:nth-of-type(4){grid-column:2}.step-editor button{grid-column:3}.task-row{grid-template-columns:1fr}#task-composer{padding:8px 12px}}
-textarea{font:inherit;font-size:13px;border:1px solid #bdcbbb;border-radius:3px;padding:9px 10px;background:#fffef8;color:var(--ink);min-width:0;resize:vertical;width:100%}textarea:focus{outline:2px solid #9cb78f;outline-offset:3px}#workflow-description{max-width:680px}#task-form>label{margin-top:16px}.step-editor{grid-template-columns:24px 120px 120px minmax(90px,1fr) minmax(110px,1.2fr) 92px}.step-controls{display:flex;gap:3px;padding-top:23px}.step-controls button{margin:0;padding:8px}.advanced-step{grid-column:2/-1}.advanced-step textarea,.history-row pre{font:12px/1.6 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.parameter-fields,.setup-choices,.copy-fields,.list-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}.copy-fields{grid-template-columns:1fr 1fr auto;align-items:end}.setup-choices{max-width:800px}.setup-target{width:100%}.pagination{display:flex;gap:16px;align-items:center;justify-content:flex-end;margin-top:16px}.pagination .muted{margin:0}.task-options{align-items:center}.task-options input[type=number]{width:100px}.workflow-management{flex-wrap:wrap;margin-top:16px}.history-row,.recovery-editor{border-top:1px solid var(--line);margin-top:18px;padding-top:16px}.history-row pre{background:#e9eee2;padding:12px}.recovery-editor>button{margin:8px 8px 8px 0}.recovery-editor>.check{margin-top:16px}.list-filters{max-width:650px}button:disabled{cursor:default}@media(max-width:1150px){.step-editor{grid-template-columns:22px 1fr 1fr 92px}.step-controls{grid-column:4;grid-row:1}.step-controls button{grid-column:auto;grid-row:auto}.advanced-step{grid-column:2/-1}.copy-fields{grid-template-columns:1fr 1fr}.copy-fields button{justify-self:start}}@media(max-width:650px){.step-editor{grid-template-columns:18px minmax(0,1fr) 92px}.step-controls{grid-column:3}.step-editor .advanced-step{grid-column:2/-1}.parameter-fields,.setup-choices,.copy-fields,.list-filters{grid-template-columns:1fr}.pagination{justify-content:flex-start}.section-title>.row-actions{flex-wrap:wrap}}
+/* SaltedFish 管理页 · 高级管理：任务与流程、主机辅助配置、访问权限，以及对话框。 */
 
-#remote-form{display:grid;gap:14px;max-width:680px}#remote-form button{justify-self:start}#remote-state{font-size:13px;overflow-wrap:anywhere}#remote-profiles{min-height:112px}#remote-form .check{padding:0}#remote-form .muted{margin:0}#remote-form input{width:100%}#remote-form input[type=checkbox]{width:auto}
+/* 任务与流程 */
+.target-picker { display: grid; grid-template-columns: 1fr 2fr auto; gap: 12px; align-items: end; margin: 20px 0; }
+.target-picker select { width: 100%; }
+#task-composer { border: 1px solid var(--line); border-radius: 14px; padding: 6px 20px; background: #ffffff; }
+#task-form { padding: 8px 0 18px; }
+#task-form > label { margin-top: 16px; }
+#task-name { max-width: 480px; }
+#workflow-description { max-width: 680px; }
+.step-editor { display: grid; grid-template-columns: 24px 120px 120px minmax(90px, 1fr) minmax(110px, 1.2fr) 92px; gap: 8px; align-items: start; margin: 16px 0; }
+.step-editor .number { color: var(--muted); padding-top: 31px; font: 13px var(--mono); }
+.step-editor label { font-size: 12.5px; }
+.step-controls { display: flex; gap: 3px; padding-top: 24px; }
+.step-controls button { margin: 0; padding: 8px; }
+.advanced-step { grid-column: 2 / -1; }
+.advanced-step textarea, .history-row pre { font: 13px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-options { display: flex; flex-wrap: wrap; align-items: center; gap: 28px; margin: 18px 0 0; }
+.task-options .check { padding: 0; }
+.task-options input[type=number] { width: 100px; }
+.parameter-fields, .setup-choices, .copy-fields, .list-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.copy-fields { grid-template-columns: 1fr 1fr auto; align-items: end; }
+.list-filters { max-width: 650px; }
+.task-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px auto; gap: 16px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.task-row h3 { font-size: 15px; }
+.task-row .row-actions { flex-wrap: wrap; justify-content: flex-end; }
+.task-row small, .workflow small, .setup-card small { display: block; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.progress-track { height: 4px; border-radius: 2px; background: var(--line); width: 100%; margin-top: 8px; overflow: hidden; }
+.progress-track progress { display: block; width: 100%; height: 4px; accent-color: var(--orange); }
+.pagination { display: flex; gap: 16px; align-items: center; justify-content: flex-end; margin-top: 16px; }
+.pagination .muted { margin: 0; }
+#tasks .section-title > .muted { margin: 0; }
+#workflows { border-top: 1px solid var(--line); }
+.workflow { border-top: 1px solid var(--line); padding: 20px 0; }
+.workflow .parameter-fields { margin: 14px 0; }
+.workflow-management { flex-wrap: wrap; margin-top: 16px; }
+.plan-preview { background: var(--block); border-radius: 12px; padding: 14px 18px; margin: 12px 0; font-size: 13px; overflow-wrap: anywhere; }
+.plan-preview ol { padding-left: 20px; }
+.history-row, .recovery-editor { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 16px; }
+.history-row pre { background: var(--block); border-radius: 10px; padding: 12px; }
+.recovery-editor > button { margin: 8px 8px 8px 0; }
+.recovery-editor > .check { margin-top: 16px; }
+
+/* 主机辅助配置 */
+.context-note { background: var(--block); padding: 13px 17px; margin: 20px 0; border-radius: 12px; font-size: 14px; }
+.context-note a { margin-left: 6px; }
+.setup-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 18px 22px; margin: 12px 0; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+.setup-card h3 { font-size: 18px; align-self: center; }
+.setup-card .setup-badge { align-self: center; font-size: 13px; font-weight: 600; border-radius: 999px; padding: 3px 11px; background: var(--blue-tint); color: var(--blue); }
+.setup-card .setup-badge.warning { background: var(--orange-tint); color: var(--orange-ink); }
+.setup-card > small, .setup-card > p, .setup-card > details, .setup-result { grid-column: 1 / -1; }
+.setup-card > details { margin: 6px 0; }
+.setup-card > button { justify-self: start; margin: 0; }
+.setup-card .path { font: 13px/1.6 var(--mono); color: var(--muted); overflow-wrap: anywhere; margin: 6px 0 4px; }
+.setup-card .setup-choices { max-width: 800px; margin: 10px 0; }
+.setup-target { width: 100%; }
+.setup-result { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; font-size: 13px; line-height: 1.6; }
+.setup-result:empty { display: none; }
+.setup-result > p:first-child { margin-top: 0; }
+.setup-result .success-note { font-weight: 600; color: var(--blue); }
+.setup-history-row { padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
+.guide { padding: 20px 24px; background: var(--block); border-radius: 14px; margin-top: 18px; }
+.guide h3 { font-size: 17px; }
+.guide p { font-size: 14px; margin: 8px 0; }
+.guide ol { padding-left: 20px; }
+.guide li { padding: 7px 0; }
+
+/* 访问权限 */
+#client-form { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 14px; align-items: end; background: var(--block); border-radius: 14px; padding: 18px; margin-bottom: 12px; }
+#client-created { padding: 13px 16px; border-radius: 12px; background: var(--blue-tint); font-size: 13px; }
+.client-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 14px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); font-size: 15px; font-weight: 600; }
+.client-row .state { font-weight: 400; }
+.client-row small { color: var(--muted); font-size: 13px; font-weight: 400; }
+
+/* 对话框 */
+dialog { width: min(820px, 92vw); max-height: 90vh; overflow: auto; border: 0; border-radius: 16px; background: #ffffff; color: #1f2328; padding: 28px; box-shadow: 0 30px 80px rgba(11, 20, 112, .28); }
+dialog::backdrop { background: rgba(11, 20, 112, .4); }
+dialog h2 { font-size: 22px; }
+dialog ol { padding-left: 24px; }
+dialog li { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+dialog code { font: 13px var(--mono); color: var(--muted); }
+dialog img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 14px; }
+/* 对话框可滚动且可能很长（任务步骤、50 个流程版本）：反馈区固定在可视区顶部，底部按钮的错误/成功提示不会落在视野之外。 */
+.dialog-feedback { position: sticky; top: 0; z-index: 2; color: #b42318; background: #fef0ee; border-radius: 10px; padding: 12px 16px; margin: 12px 0; font-size: 14px; }
+.dialog-feedback[data-error=false] { color: #1626b8; background: #eef0ff; }
+.dialog-feedback:empty { display: none; }
+#agent-add-dialog { width: min(720px, calc(100vw - 32px)); }
+#agent-add-dialog > label { margin-top: 20px; }
+#agent-add-dialog > .check { margin-top: 14px; padding: 0; }
+#agent-add-dialog > button { margin-top: 20px; }
+#new-agent-configuration, #browser-connection-code, .reconnect-panel textarea { width: 100%; font: 13px/1.6 var(--mono); overflow-wrap: anywhere; }
+#browser-connection-code, .reconnect-panel textarea { word-break: break-all; }
+#agent-created { margin-top: 18px; }
+#agent-created button { margin-top: 10px; }
+
+@media (max-width: 1150px) {
+  .step-editor { grid-template-columns: 22px 1fr 1fr 92px; }
+  .step-editor label:nth-of-type(3) { grid-column: 2; }
+  .step-controls { grid-column: 4; grid-row: 1; }
+  .advanced-step { grid-column: 2 / -1; }
+  .task-row { grid-template-columns: 1fr 120px; }
+  .task-row .row-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .target-picker { grid-template-columns: 1fr 1fr; }
+  .target-picker button { justify-self: start; }
+  .copy-fields { grid-template-columns: 1fr 1fr; }
+  .copy-fields button { justify-self: start; }
+}
+@media (max-width: 1000px) {
+  #client-form { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 650px) {
+  .target-picker, #client-form, .parameter-fields, .setup-choices, .copy-fields, .list-filters { grid-template-columns: 1fr; }
+  .client-row { grid-template-columns: 1fr auto; }
+  .client-row small { grid-column: 1; }
+  .task-row { grid-template-columns: 1fr; }
+  #task-composer { padding: 6px 12px; }
+  .step-editor { grid-template-columns: 24px minmax(0, 1fr); }
+  .step-editor .step-controls { grid-column: 2; grid-row: 1; justify-self: end; padding: 0; }
+  .step-editor .number { grid-column: 1; grid-row: 1; padding: 4px 0; }
+  .step-editor label, .step-editor label:nth-of-type(n), .step-editor .advanced-step { grid-column: 1 / -1; }
+  .step-editor label { font-size: 13px; }
+  .step-editor input, .step-editor select { width: 100%; }
+  .pagination { justify-content: flex-start; }
+  .setup-card { padding: 16px; gap: 8px 12px; }
+  .guide { padding: 18px; }
+  dialog { padding: 20px; width: calc(100vw - 24px); }
+}

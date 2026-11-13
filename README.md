@@ -75,7 +75,7 @@ ChatGPT、Claude、WorkBuddy 自带的插件也能用你的登录状态，但只
 
 ## 快速开始
 
-需要 Node.js 24+ 和 Chrome。当前版本 **0.3.29**。
+需要 Node.js 24+ 和 Chrome。当前版本 **0.3.30**。
 
 ```sh
 npm install -g saltedfish

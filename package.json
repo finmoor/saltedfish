@@ -1,6 +1,6 @@
 {
   "name": "saltedfish",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "description": "Let AI agents use the Chrome you already use, over MCP: multiple profiles, tab-group scoped writes, local or LAN service. 让 AI 用上你正在用的浏览器。",
   "license": "MIT",
   "author": "Finn (https://github.com/finmoor)",

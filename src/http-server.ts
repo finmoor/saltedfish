@@ -132,10 +132,11 @@ export async function startServer(config: Config, options: { setup?: SetupOption
         '/connections.js': {file:'connections.js',type:'text/javascript'},
         '/service-address.js': {file:'service-address.js',type:'text/javascript'},
         '/random-id.js': {file:'random-id.js',type:'text/javascript'},
+        '/icon.png': { file: 'icon.png', type: 'image/png' },
       };
       if (assets[url.pathname] && request.method === 'GET') {
         const asset = assets[url.pathname]!;
-        response.writeHead(200, { 'content-type': `${asset.type}; charset=utf-8`, 'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'", 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        response.writeHead(200, { 'content-type': asset.type.startsWith('image/') ? asset.type : `${asset.type}; charset=utf-8`, 'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'", 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
         return response.end(await readFile(path.join(projectDir, 'ui', asset.file)));
       }
       if (url.pathname === '/session' && request.method === 'POST') {
