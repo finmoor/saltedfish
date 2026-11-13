@@ -1,6 +1,6 @@
 # SaltedFish 架构
 
-本文说明当前版本 0.3.28 的组件、执行模型和故障边界。服务、npm 包和 Chrome 扩展使用同一个版本号。工具参数与返回值的完整语义见[交互说明](interaction.md)。
+本文说明当前版本 0.3.29 的组件、执行模型和故障边界。服务、npm 包和 Chrome 扩展使用同一个版本号。工具参数与返回值的完整语义见[交互说明](interaction.md)。
 
 SaltedFish 由一个常驻服务、每个 Chrome 配置中的扩展、管理页和 SQLite 状态库组成。Agent 通过服务的 `/mcp` 调用工具；扩展通过 `/bridge` 建立 WebSocket 连接，使用 Chrome API 和 Chrome DevTools Protocol（CDP）执行命令。管理页与这些端点由同一服务提供。
 

@@ -1,6 +1,6 @@
 # 安装与运维指南
 
-SaltedFish 由一个服务和 Chrome 扩展组成。Agent 通过 MCP 调用服务，扩展连接同一个服务。当前服务、npm 包和扩展版本均为 `0.3.28`。
+SaltedFish 由一个服务和 Chrome 扩展组成。Agent 通过 MCP 调用服务，扩展连接同一个服务。当前服务、npm 包和扩展版本均为 `0.3.29`。
 
 ## 系统要求
 
@@ -183,7 +183,7 @@ saltedfish recover-lock
 从可信发行来源取得 TGZ 后：
 
 ```sh
-npm install -g ./saltedfish-0.3.28.tgz
+npm install -g ./saltedfish-0.3.29.tgz
 saltedfish install
 ```
 
