@@ -15,15 +15,13 @@ export function connectSummary(plans: ConnectPlan[]) {
   const lines = [`将接入 ${names(changing)}，写入前自动备份配置。`];
   if (trusted.length) lines.push(`信任后 ${names(trusted)} 调用浏览器工具不再逐次确认，可以用已登录的身份操作网站。`);
   if (restored.length) lines.push(`${names(restored)} 恢复逐次确认。`);
-  lines.push(...changing.flatMap(plan => plan.highlights ?? []));
-  // Desktop 开着时可能在退出时用它记着的旧配置盖掉刚写的，所以写入前就要说，不能等写完。
-  if (changing.some(plan => plan.client === 'claude-desktop')) lines.push('Claude Desktop 开着的话，先完全退出（托盘里也退出）再确认，不然它退出时可能用旧配置覆盖刚写入的。');
-  lines.push('完整说明：saltedfish connect --preview');
+  // Claude Desktop 要先退出再写，这句在它的预览说明里（client-setup.ts），写入前就会显示。
+  lines.push(...changing.flatMap(plan => plan.highlights ?? []), '完整说明：saltedfish connect --preview');
   return lines.join('\n');
 }
-export function connectResult(results: ConnectResult[]) {
+export function connectResult(results: ConnectResult[], keptApprovals = false) {
   const changed = results.filter(item => !item.unchanged), same = results.filter(item => item.unchanged), tools = results.find(item => item.verification)?.verification?.tools;
-  return [changed.length ? `已接入：${names(changed)}${tools ? `（${tools} 个工具）` : ''}。已打开的会话要重连才生效。` : '', same.length ? `已是最新：${names(same)}。` : '', results.some(item => item.client === 'claude-desktop') ? 'Claude Desktop 需完全退出并重启，在应用内确认工具审批。' : '', results.some(item => item.client === 'workbuddy') ? 'WorkBuddy 需在 MCP 设置中刷新并批准配置，再新开会话。' : ''].filter(Boolean).join('\n');
+  return [changed.length ? `已接入：${names(changed)}${tools ? `（${tools} 个工具）` : ''}${keptApprovals ? '，保留逐次确认' : ''}。已打开的会话要重连才生效。` : '', same.length ? `已是最新：${names(same)}。` : '', results.some(item => item.client === 'claude-desktop' && !item.unchanged) ? '现在可以打开 Claude Desktop（开着的话完全退出再开），在应用里确认工具审批。' : '', results.some(item => item.client === 'workbuddy') ? 'WorkBuddy 需在 MCP 设置中刷新并批准配置，再新开会话。' : ''].filter(Boolean).join('\n');
 }
 export function switchResult(command: 'upgrade' | 'rollback', active: { version: string; previous?: string | undefined }, clients: unknown[] | undefined, launcher?: string) {
   if (!clients) return `SaltedFish 已经是 ${active.version}，不用升级。`;
@@ -69,6 +67,7 @@ export async function connectClients(setup: ClientSetup, args: string[], termina
   const selection: SetupSelection = { trust: flags.has('--keep-approvals') ? 'preserve' : flags.has('--revoke-trust') ? 'prompt' : 'service', ...(values.has('--config') ? { configPath: values.get('--config')! } : {}), ...(values.has('--project') ? { projectDirectory: values.get('--project')! } : {}) };
   let plans = await Promise.all(clients.map(client => setup.preview(client as SetupClient, selection)));
   const pending = plans.some(plan => !plan.unchanged);
+  let keptApprovals = selection.trust === 'preserve';
   if (!concise) console.log(JSON.stringify({ plans }, null, 2)); // 预览只有路径、范围和说明，不返回原文件或凭据。
   else if (pending) console.log(`\n${connectSummary(plans)}`);
   if (flags.has('--preview')) return;
@@ -83,17 +82,17 @@ export async function connectClients(setup: ClientSetup, args: string[], termina
       } finally { prompt.close(); }
       if (trusting && /^k(eep)?$/i.test(answer)) {
         // 换成“保留审批”重新生成计划再写，和直接传 --keep-approvals 一样。
-        plans = await Promise.all(clients.map(client => setup.preview(client as SetupClient, { ...selection, trust: 'preserve' })));
+        plans = await Promise.all(clients.map(client => setup.preview(client as SetupClient, { ...selection, trust: 'preserve' }))); keptApprovals = true;
       } else if (!/^(y|yes)$/i.test(answer)) { console.log('已取消，配置未修改。'); return; }
     }
   }
   const completed: ConnectResult[] = [];
   try {
     for (const plan of plans) completed.push(await setup.apply(plan.planId));
-    console.log(concise ? connectResult(completed) : JSON.stringify({ completed }, null, 2));
+    console.log(concise ? connectResult(completed, keptApprovals) : JSON.stringify({ completed }, null, 2));
   } catch (error) {
     const note = '已完成项保留备份；失败项未覆盖。可用 --history 查看或 --restore 恢复，不会回滚已被其他程序改动的配置。';
-    console.log(concise ? [connectResult(completed), note].filter(Boolean).join('\n') : JSON.stringify({ completed, note }, null, 2));
+    console.log(concise ? [connectResult(completed, keptApprovals), note].filter(Boolean).join('\n') : JSON.stringify({ completed, note }, null, 2));
     throw error;
   }
 }

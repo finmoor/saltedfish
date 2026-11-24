@@ -1,7 +1,7 @@
 export function recoveryAdvice(code?: string) {
   const messages: Record<string, [string, string]> = {
     CONNECTION_CHANGED: ['浏览器连接已变化', '核对当前页面与已完成步骤，为剩余动作明确选择目标后创建新任务。'],
-    PROFILE_OFFLINE: ['这个账号尚未连接', '在原 Chrome 配置中继续连接；不要改用其他账号。'],
+    PROFILE_OFFLINE: ['这个浏览器尚未连接', '在原 Chrome 配置中继续连接；不要改用其他浏览器。'],
     CLIENT_AUTHORIZATION_FAILED: ['调用方授权已失效', '在客户端授权页核对账号范围和撤销状态，再决定是否创建新的剩余任务。'],
     OPERATION_JOURNAL_FAILED: ['完成状态未能保存', '先检查实际页面，修复存储并重启服务，再确认未知记录；不要重复已发生的业务动作。'],
     TASK_JOURNAL_FAILED: ['任务记录未能保存，队列已停止', '核对页面与操作记录，修复磁盘/数据目录后重启服务，再重新编辑剩余步骤；不会自动继续或重放。'],

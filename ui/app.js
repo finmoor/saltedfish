@@ -155,7 +155,8 @@ async function renderProfiles() {
     if (profile.online) actions.append(button('查看标签页', () => loadTabs(profile, article)));
     if (profile.online && profile.capabilities?.includes('pause-control')) actions.append(button('暂停 Agent', async () => { await call('chrome_pause_profile', { profileId: profile.id }); status.textContent = '此浏览器已暂停，Agent 不能再操作它。要继续时，在这个 Chrome 的 SaltedFish 扩展里点“继续连接”；管理页不能替你继续。'; await render(true); }, 'danger'));
     else if (profile.online) actions.append(el('small', '新功能需更新扩展'));
-    if (!profile.online) actions.append(button('移除…', node => removeProfile(profile, node), 'danger'));
+    // 暂停着的浏览器还在，点“继续连接”就回来，不给移除的入口。
+    if (!profile.online && !paused) actions.append(button('移除…', node => removeProfile(profile, node), 'danger'));
     heading.append(title, actions); const info = el('details'); info.append(el('summary','连接详情'),el('p',`配置 ID：${profile.id} · 扩展 ${profile.version}`,'identity'));
     article.append(heading,el('p',reloadNeeded ? profile.extensionReload : refreshNeeded ? extensionRefreshInstruction(profile) : extensionUpdateInstruction(profile, extensionRelease) || (profile.online ? 'Agent 会使用这个 Chrome 配置现有的登录状态。' : offlineDescription(profile)),'profile-description'),info); const panel = connectionsUI.reconnectPanel(profile); if (panel) article.append(panel); profilesRoot.append(article);
   }

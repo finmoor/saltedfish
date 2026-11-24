@@ -12,6 +12,8 @@ import { repairGatewayTls } from './gateway-tls.js';
 import { registerMachineCommand } from './machine-registration.js';
 import {unregisterDesktopLaunch} from './desktop-registration.js';
 import {unregisterNativeSettings} from './native-settings-registration.js';
+import {controlText,statusText} from './status-text.js';
+import {servicePublicUrl} from './service-network.js';
 import {parseDesktopUrl} from './desktop-links.js';
 import { switchResult } from './client-connect.js';
 import { setupClients } from './client-types.js';
@@ -100,6 +102,8 @@ async function setupLocal(home:string,port?:string,noStart=false,networkArgs:str
   try{await runCore(home,'local',['setup'],true);}finally{if(noStart)await stopService(home,'local');}
   await synchronizeDesktop(home);
 }
+const terminalOutput=()=>!!process.stdin.isTTY&&!!process.stdout.isTTY;
+async function serviceAddressOf(home:string){try{const config=await desktopConfig(home);return config?servicePublicUrl(config):undefined;}catch{return undefined;}}
 async function desktopConfig(home:string){const directory=dataPath(home,'local');if(!await exists(path.join(directory,'config.json')))return undefined;return loadConfig(directory);}
 async function synchronizeDesktop(home:string){
   if(process.platform!=='win32')return;
@@ -150,6 +154,8 @@ async function main(){
     validateOptions(args,['--clients','--config','--project'],['--trust-browser','--keep-approvals']);
     if(noStart&&(args.length||autostart))throw new Error('--no-start 不能同时自动接入客户端或开启开机自动启动。');
     if(noConnect&&args.length)throw new Error('--no-connect 不能同时传入接入选项。');
+    // 第一次准备运行文件要校验近 4000 个文件，Windows 上半分钟左右；先说一声，免得以为卡住了。
+    if(process.stdout.isTTY&&!await exists(releasePath(home,VERSION)))console.log('正在准备运行文件，第一次要半分钟左右…');
     const network=await withLock(home,async()=>{const configFile=path.join(dataPath(home,'local'),'config.json'),firstInstall=!await exists(configFile);const existing=firstInstall?undefined:await readJson(configFile).catch(()=>undefined);const resolved=await resolveInstallNetwork({platform:process.platform,firstInstall,local,allowInsecureLan,port,host,url,cert,key,localPort,detect:()=>defaultRouteAddress(),current:{host:existing?.network?.host,port:existing?.port}});await initialize(home);await setupLocal(home,resolved.port,noStart,resolved.networkArgs);return resolved;});
     // 终端里给人看，管道和脚本继续拿 JSON。
     const terminal=!!process.stdin.isTTY&&!!process.stdout.isTTY,extensionDir=path.join(dataPath(home,'local'),'extension');
@@ -189,7 +195,9 @@ async function main(){
     });
     console.log(JSON.stringify(result));return;
   }
-  if(command==='status'||command==='doctor') {noArgs(args);console.log(JSON.stringify({product:'SaltedFish',packageVersion:VERSION,active:await active(home),home,autostart:await autostartState(),...await diagnose(home)},null,2));return;}
+  if(command==='status'||command==='doctor') {noArgs(args);const report={product:'SaltedFish',packageVersion:VERSION,active:await active(home),home,autostart:await autostartState(),...await diagnose(home)};
+    // 终端里给人看，管道和脚本继续拿 JSON。
+    console.log(terminalOutput()?statusText(report,{address:await serviceAddressOf(home),doctor:command==='doctor'}):JSON.stringify(report,null,2));return;}
   if(command==='logs'){await logTail(home,role,args);return;}
   if(command==='extension'){noArgs(args);const directory=path.join(dataPath(home,'local'),'extension');if(!await exists(path.join(directory,'manifest.json')))throw new Error('尚未初始化本机扩展，先运行 saltedfish install。');console.log(directory);return;}
   if(command==='upgrade'||command==='rollback'){
@@ -204,7 +212,7 @@ async function main(){
     }
     // 固定 launcher 的文案随版本改进：升级时只替换历史上发布过的已知内容，用户改过的保持不动并在输出里说明。
     const outcome:{launcher?:string}={};
-    const clients=await withLock(home,async()=>{const old=await active(home);if(command==='upgrade'){await stageRelease(home,packageRoot);outcome.launcher=await writeLauncher(home).catch(()=>'kept');}else if(!old.previous)throw new Error('没有可回滚的上一版本。');
+    const clients=await withLock(home,async()=>{const old=await active(home);if(command==='upgrade'){if(process.stdout.isTTY&&!await exists(releasePath(home,VERSION)))console.log('正在准备新版本的运行文件…');await stageRelease(home,packageRoot);outcome.launcher=await writeLauncher(home).catch(()=>'kept');}else if(!old.previous)throw new Error('没有可回滚的上一版本。');
       const config=await desktopConfig(home);
       try{if(config){await unregisterDesktopLaunch(config,{validateOnly:true});await unregisterNativeSettings(config,{validateOnly:true});await unregisterNativeSettings(config);await unregisterDesktopLaunch(config);}return await switchVersion(home,command==='upgrade'?VERSION:old.previous!);}finally{await synchronizeDesktop(home);}});
     // 终端里给人看，管道和脚本继续拿 JSON。
@@ -228,7 +236,8 @@ async function main(){
   }
   if(['start','stop','restart'].includes(command)){
     const force=flag(args,'--force');noArgs(args);if(command==='start'&&force)throw new Error('start 不使用 --force。');
-    await withLock(home,async()=>{if(command!=='start')await stopService(home,role,force);if(command!=='stop')await startService(home,role);});console.log(JSON.stringify(await serviceStatus(home,role)));return;
+    await withLock(home,async()=>{if(command!=='start')await stopService(home,role,force);if(command!=='stop')await startService(home,role);});
+    const state=await serviceStatus(home,role);console.log(terminalOutput()?controlText(command as 'start'|'stop'|'restart',state,role==='local'?await serviceAddressOf(home):undefined):JSON.stringify(state));return;
   }
   if(command==='serve'){
     noArgs(args);const pending=await maintenanceNotice(home);if(pending)throw new Error(pending);

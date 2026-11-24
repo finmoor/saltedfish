@@ -59,8 +59,9 @@ test('终端里只说接入谁和信任的含义，特别情况单独列出', ()
   assert.match(summary, /保留已有的逐工具例外规则/); assert.match(summary, /saltedfish connect --preview/);
   assert.ok(summary.split('\n').length <= 4);
   assert.doesNotMatch(connectSummary([{ client: 'claude', trust: 'preserve' }]), /信任/);
-  assert.match(connectSummary([{ client: 'claude-desktop', trust: 'service' }]), /先完全退出.*再确认/, 'Desktop 开着会盖掉配置，写入前就要说');
-  assert.doesNotMatch(connectSummary([{ client: 'claude-desktop', trust: 'service', unchanged: true }, { client: 'codex', trust: 'service' }]), /Claude Desktop/);
+  // Desktop 先退出再写的提醒来自预览说明（highlights），摘要只转述，不再自己另加一行。
+  const desktop = connectSummary([{ client: 'claude-desktop', trust: 'service', highlights: ['Claude Desktop 开着的话，先完全退出（托盘里也退出）再接入，写完再打开。'] }]);
+  assert.equal(desktop.match(/Claude Desktop 开着的话/g)?.length, 1);
   assert.match(connectSummary([{ client: 'codex', trust: 'prompt' }]), /Codex 恢复逐次确认/);
   assert.match(connectSummary([{ client: 'codex', trust: 'service', unchanged: true }, { client: 'claude', trust: 'preserve' }]), /^将接入 Claude Code，/);
 });
@@ -68,6 +69,9 @@ test('终端里只说接入谁和信任的含义，特别情况单独列出', ()
 test('终端里的结果只报接入了谁、工具数和是否要重连', () => {
   assert.equal(connectResult([{ client: 'codex', verification: { tools: 59 } }, { client: 'claude', unchanged: true, verification: { tools: 59 } }]), '已接入：Codex（59 个工具）。已打开的会话要重连才生效。\n已是最新：Claude Code。');
   assert.equal(connectResult([]), '');
+  assert.match(connectResult([{ client: 'codex' }], true), /^已接入：Codex，保留逐次确认。/);
+  assert.match(connectResult([{ client: 'claude-desktop' }]), /现在可以打开 Claude Desktop/);
+  assert.doesNotMatch(connectResult([{ client: 'claude-desktop', unchanged: true }]), /打开 Claude Desktop/, '没改动就不叫人重开 Desktop');
 });
 
 test('终端里不输出 JSON，明确选项时不询问', async t => {

@@ -103,7 +103,7 @@ export class Broker {
 
   capture(profileId: string): Connection {
     const connection = this.profiles.get(profileId);
-    if (!connection || connection.socket.readyState !== 1) throw new BrowserError('PROFILE_OFFLINE', `配置 ${profileId} 未连接。${this.offlineReason(profileId)?.recovery ?? ''}不会改用其他账号。`);
+    if (!connection || connection.socket.readyState !== 1) throw new BrowserError('PROFILE_OFFLINE', `配置 ${profileId} 未连接。${this.offlineReason(profileId)?.recovery ?? ''}不会改用其他浏览器。`);
     return connection;
   }
 
@@ -171,7 +171,7 @@ export class Broker {
     if (expectedConnection && connection !== expectedConnection) throw new BrowserError('CONNECTION_CHANGED', '浏览器在操作期间重新连接；已停止后续步骤，避免使用新会话的同号标签页。', NOT_DISPATCHED);
     if (!connection || connection.socket.readyState !== 1) {
       const offline = this.offlineReason(profileId);
-      throw new BrowserError('PROFILE_OFFLINE', `配置 ${profileId} 未连接。${offline ? offline.recovery : '打开该 Chrome 配置中的扩展，确认服务地址与连接状态。'}不会改用其他账号。`, NOT_DISPATCHED);
+      throw new BrowserError('PROFILE_OFFLINE', `配置 ${profileId} 未连接。${offline ? offline.recovery : '打开该 Chrome 配置中的扩展，确认服务地址与连接状态。'}不会改用其他浏览器。`, NOT_DISPATCHED);
     }
     const id = randomUUID();
     if(controller && typeof args.tabId==='number' && connection.info.capabilities?.includes(CAPABILITY.dialogControl)) {

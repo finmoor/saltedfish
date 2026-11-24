@@ -124,13 +124,19 @@ export function initializeWorkspace({ el, button, run, onNavigate, onRefresh, on
     const needsReview = !stale && !!summary.protection?.unknown;
     // 有 Agent 真的碰过浏览器（服务端记着上次使用），就不再摆“第一次使用”的试用卡片。
     const experienced = !!summary.agents?.some(a => a.lastUsedAt);
+    // 已经授权（install 会顺手接好本机检测到的 Agent）但还没有一个连上：不该再叫人去新建授权，而是去 Agent 里开个会话。
+    const agentsWaiting = !ready && configured.length > 0;
+    // 浏览器都是暂停着的：只要在扩展里点“继续连接”，不要把人引到配对流程。
+    const allPaused = profiles.length > 0 && !online.length && profiles.every(isPaused);
+    // 试用卡片还在、Agent 已经接好（连上或只差开会话）时，主按钮直接带人去试用指令。
+    const tryNow = online.length > 0 && (ready || agentsWaiting) && !experienced;
     $('.usage-panel').hidden = experienced;
-    $('#overview-title').textContent = stale ? '连接状态需要更新。' : needsReview ? '有操作需要先核查。' : outdated.length ? '浏览器扩展需要更新。' : !profiles.length ? '先连接一个浏览器。' : !online.length ? '打开浏览器，继续连接。' : ready ? '浏览器已就绪。' : '浏览器连好了，接入 Agent 吧。';
-    $('#overview-description').textContent = stale ? '先恢复管理页连接，再判断浏览器是否在线。' : needsReview ? '连接与任务记录已保留。请先检查对应浏览器的实际结果，确认后再继续操作。' : outdated.length ? `${outdated.length} 个在线浏览器仍在使用旧扩展。${extensionRefreshInstruction(outdated.every(profile => profile.capabilities?.includes('self-update-v1')) ? outdated[0] : undefined)}` : !profiles.length ? '保留你熟悉的登录状态，让 Agent 在你指定的 Chrome 里工作。' : !online.length ? '打开浏览器，扩展会自动连上；暂停着的，到扩展里点“继续连接”。扩展重装过或换了文件夹，到“浏览器”里点“重新连接”。' : ready ? `有 ${online.length} 个浏览器在线。日常任务直接在 Agent 的聊天里提出。` : '为这台电脑上的 Agent 创建独立授权，再把配置导入它。Agent 要和服务在同一台电脑上。';
-    const next = $('#overview-next'); next.href = !online.length ? '#accounts' : ready && !experienced ? '#overview' : '#agents'; next.firstChild.textContent = !online.length ? '连接浏览器 ' : !ready ? '接入 Agent ' : experienced ? '查看 Agent 连接 ' : '开始使用 ';
+    $('#overview-title').textContent = stale ? '连接状态需要更新。' : needsReview ? '有操作需要先核查。' : outdated.length ? '浏览器扩展需要更新。' : !profiles.length ? '先连接一个浏览器。' : allPaused ? '浏览器暂停着。' : !online.length ? '打开浏览器，继续连接。' : ready || agentsWaiting && experienced ? '浏览器已就绪。' : agentsWaiting ? '浏览器连好了，去 Agent 里试试。' : '浏览器连好了，接入 Agent 吧。';
+    $('#overview-description').textContent = stale ? '先恢复管理页连接，再判断浏览器是否在线。' : needsReview ? '连接与任务记录已保留。请先检查对应浏览器的实际结果，确认后再继续操作。' : outdated.length ? `${outdated.length} 个在线浏览器仍在使用旧扩展。${extensionRefreshInstruction(outdated.every(profile => profile.capabilities?.includes('self-update-v1')) ? outdated[0] : undefined)}` : !profiles.length ? '保留你熟悉的登录状态，让 Agent 在你指定的 Chrome 里工作。' : allPaused ? '到暂停的那个 Chrome 的 SaltedFish 扩展里点“继续连接”，Agent 就能接着用。' : !online.length ? '打开浏览器，扩展会自动连上；暂停着的，到扩展里点“继续连接”。扩展重装过或换了文件夹，到“浏览器”里点“重新连接”。' : ready ? `有 ${online.length} 个浏览器在线。日常任务直接在 Agent 的聊天里提出。` : agentsWaiting ? (experienced ? `有 ${online.length} 个浏览器在线。在 Agent 里新开会话就能用。` : `已授权 ${configured.length} 个 Agent，还没有一个连上。在 Agent 里新开会话（开着的要重连 MCP），再发试用指令。`) : '为这台电脑上的 Agent 创建独立授权，再把配置导入它。Agent 要和服务在同一台电脑上。';
+    const next = $('#overview-next'); next.href = !online.length ? '#accounts' : tryNow ? '#overview' : '#agents'; next.firstChild.textContent = allPaused ? '查看浏览器 ' : !online.length ? '连接浏览器 ' : tryNow ? '开始使用 ' : !ready && !agentsWaiting ? '接入 Agent ' : '查看 Agent 连接 ';
     if (outdated.length) { next.href = '#accounts'; next.firstChild.textContent = '查看扩展更新 '; }
     if (needsReview) { next.href = '#activity'; next.firstChild.textContent = '查看待核查操作 '; }
-    next.onclick=event=>{if(needsReview){event.preventDefault();$('#protection-notice').scrollIntoView({block:'center'});$('#protection-notice button')?.focus({preventScroll:true});}else if(!outdated.length&&online.length&&ready&&!experienced){event.preventDefault();$('.usage-panel').scrollIntoView({block:'center'});$('#example-profile').focus({preventScroll:true});}};
+    next.onclick=event=>{if(needsReview){event.preventDefault();$('#protection-notice').scrollIntoView({block:'center'});$('#protection-notice button')?.focus({preventScroll:true});}else if(!outdated.length&&tryNow){event.preventDefault();$('.usage-panel').scrollIntoView({block:'center'});$('#example-profile').focus({preventScroll:true});}};
     $('#journey-browser').classList.toggle('complete', usable.length > 0 && !outdated.length && !stale); $('#journey-agent').classList.toggle('complete', !!ready && !stale); $('#journey-use').classList.toggle('complete', experienced && !stale);
     $('#journey-browser-state').textContent = `${online.length} 个在线${outdated.length ? ` · ${outdated.length} 个扩展需更新` : ''}${profiles.length > online.length ? ` · ${profiles.length - online.length} 个未连接` : ''}`;
     $('#journey-agent-state').textContent = configured.length ? configured.length+' 个已授权 · '+configured.filter(a=>a.connectionState==='connected').length+' 个已连接' : '创建 Agent 授权并导入配置';

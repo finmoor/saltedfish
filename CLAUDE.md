@@ -52,6 +52,7 @@ npm run test:ui
 | --- | --- |
 | `src/cli.ts` / `src/mcp.ts` | 原生/开发 CLI、配置生成、stdio MCP |
 | `src/npm-cli.ts` / `npm-runtime.ts` / `npm-worker.ts` | npm 包命令；home、版本快照、固定 launcher、升级回退；随机令牌鉴权的私有回环控制口 |
+| `src/status-text.ts` | status、doctor、start/stop/restart、desktop 在终端里给人看的几行；管道和脚本照旧拿 JSON |
 | `src/management-lock.ts` / `state-compatibility.ts` | 安装管理专用互斥；只读数据格式标记，挡住不兼容降级 |
 | `src/npm-update.ts` | `upgrade` 查新版并用当前 Node 的 npm 装回原目录 |
 | `src/autostart.ts` | Linux 开机启动：写 systemd 单元，只在开机拉一次服务 |

@@ -20,6 +20,7 @@ import { registerDesktopLaunch, unregisterDesktopLaunch } from './desktop-regist
 import { openDashboard } from './open-dashboard.js';
 import { runNativeSettings } from './native-settings.js';
 import { registerNativeSettings, unregisterNativeSettings,nativeSettingsReady } from './native-settings-registration.js';
+import { desktopText } from './status-text.js';
 
 interface Health { service: string; version: string; protocolVersion: number; profiles: number }
 async function health(config: Config): Promise<Health | undefined> {
@@ -131,13 +132,15 @@ try {
       if (process.argv[3] === 'register') {
         const desktopResult = await registerDesktopLaunch(config, entry);
         const nativeResult = await registerNativeSettings(config, entry, {extensionDirs});
-        console.log(JSON.stringify({ ...desktopResult, nativeSettings: nativeResult }));
+        const result = { ...desktopResult, nativeSettings: nativeResult };
+        console.log(process.stdin.isTTY && process.stdout.isTTY ? desktopText('register', result, extensionDirs.length) : JSON.stringify(result));
       } else {
         await unregisterNativeSettings(config, {validateOnly: true});
         await unregisterDesktopLaunch(config, {validateOnly: true});
         const nativeResult = await unregisterNativeSettings(config);
         const desktopResult = await unregisterDesktopLaunch(config);
-        console.log(JSON.stringify({ ...desktopResult, nativeSettings: nativeResult }));
+        const result = { ...desktopResult, nativeSettings: nativeResult };
+        console.log(process.stdin.isTTY && process.stdout.isTTY ? desktopText('unregister', result) : JSON.stringify(result));
       }
     } else if (desktop) {
       parseDesktopUrl(process.argv[3]!,config.port);

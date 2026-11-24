@@ -155,6 +155,8 @@ Windows 的默认 stdio 接入会在打开 Agent 时按需启动服务，不需�
 | `saltedfish connect --preview` | 预览客户端接入计划 |
 | `saltedfish version` | 查看命令行包版本 |
 
+`status`、`doctor`、`start`、`stop`、`restart` 在终端里只打几行说明；输出接到管道或文件时给完整 JSON，例如 `saltedfish status > status.json`。
+
 服务忙碌时，停止、重启和升级会拒绝打断任务。核查后可显式使用 `stop --force` 或 `restart --force`。已派发动作仍可能完成，结果不明保护不会因此清除。显式停止后，MCP 不会自动重启服务，需运行 `start`。
 
 Windows 的 `dashboard` 默认打开浏览器；其他系统或设置 `SALTEDFISH_NO_BROWSER=1` 时，只打印登录链接和 4 位登录码。它们算同一次登录，用掉一个，另一个也失效。有效期为 5 分钟；短码不分大小写，只有最新一个有效，输错 5 次短码作废，链接仍可用。

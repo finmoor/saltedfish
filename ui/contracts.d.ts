@@ -40,6 +40,8 @@ export interface ActivityDependencies {
     (name: 'chrome_recover_operation', args: { operationId: string; acknowledged: true }): Promise<unknown>;
     /** 只用来给操作记录里的标签号配上现在的标题和网址。 */
     (name: 'chrome_tabs', args: { profileId: string; limit: number }): Promise<{ items: TabSummary[] }>;
+    /** 核查对话框里的“显示这个标签页”：激活它并把窗口放到前面。 */
+    (name: 'chrome_focus_tab', args: { profileId: string; tabId: number }): Promise<unknown>;
   };
   /** 管理页对本机服务的请求封装（带会话令牌、会话变化时丢弃旧响应；失败的 Error 上挂着服务端错误码）。 */
   request: {

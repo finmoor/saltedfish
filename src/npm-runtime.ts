@@ -234,12 +234,22 @@ export async function verifyRelease(root: string) {
   const manifest=Release.parse(await readJson(path.join(root,'saltedfish-release.json')));
   for(const required of ['package.json','dist/npm-cli.js','dist/npm-worker.js','dist/cli.js','dist/gateway-cli.js','dist/extension/manifest.json','ui/index.html'])if(!manifest.files[required])throw new Error(`发行包缺少 ${required}`);
   const base=await realpath(root);
-  for(const[relative,expected]of Object.entries(manifest.files)) {
+  await eachLimited(Object.entries(manifest.files),async([relative,expected])=>{
     const file=contained(root,relative),resolved=await realpath(file);
     if(!resolved.startsWith(base+path.sep)||(await lstat(file)).isSymbolicLink())throw new Error('发行包含越界或链接文件。');
     if(createHash('sha256').update(await readFile(file)).digest('hex')!==expected)throw new Error(`发行文件校验失败：${relative}`);
-  }
+  });
   return manifest;
+}
+// 发行包有近 4000 个文件。Windows 上刚写出的文件第一次打开时 Defender 会同步扫描，逐个读回要一分多钟，
+// 同时开 16 个约 17 秒（2026-11-24 沙箱实测）。只并发 I/O，检查本身不变；任何一个失败就整体失败。
+const FILE_CONCURRENCY=16;
+async function eachLimited<T>(items:T[],work:(item:T)=>Promise<void>){
+  let next=0,failure:unknown;
+  await Promise.all(Array.from({length:Math.min(FILE_CONCURRENCY,items.length)},async()=>{
+    while(next<items.length&&failure===undefined){const item=items[next++]!;try{await work(item);}catch(error){failure??=error;}}
+  }));
+  if(failure!==undefined)throw failure;
 }
 export async function stageRelease(home: string, source: string) {
   const manifest=await verifyRelease(source);
@@ -252,7 +262,9 @@ export async function stageRelease(home: string, source: string) {
   }
   const staging=path.join(home,'versions',`.stage-${randomUUID()}`);await mkdir(staging,{mode:0o700});
   try {
-    for(const relative of Object.keys(manifest.files)) { const target=contained(staging,relative);await mkdir(path.dirname(target),{recursive:true});await copyFile(contained(source,relative),target); }
+    const relatives=Object.keys(manifest.files);
+    for(const directory of new Set(relatives.map(relative=>path.dirname(contained(staging,relative)))))await mkdir(directory,{recursive:true});
+    await eachLimited(relatives,relative=>copyFile(contained(source,relative),contained(staging,relative)));
     await copyFile(path.join(source,'saltedfish-release.json'),path.join(staging,'saltedfish-release.json'));
     await verifyRelease(staging); await renameFile(staging,destination);
   } finally { await retryFile(()=>rm(staging,{recursive:true,force:true})); } // staging 由本函数在已校验 home 内创建。

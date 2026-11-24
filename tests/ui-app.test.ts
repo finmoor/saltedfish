@@ -116,6 +116,23 @@ test('操作记录给标签号配上它现在的标题和网址，核查对话�
   assert.doesNotMatch(app.text('#operations'), /现在是|读取超时/);
 });
 
+test('核查对话框：工具写成人看得懂的名字；标签页还在就能一键切过去，标签页没了不给按钮', async t => {
+  const a = online(1, '个人'), ops = [...unknownOps(a.id, 1), { ...unknownOps(a.id, 2)[1]!, tabId: 9 }], server = createServer({ profiles: [a] });
+  server.rpc.chrome_operations = operationsRpc(ops);
+  server.rpc.chrome_tabs = () => ({ items: [{ tabId: 7, title: '订单详情', url: 'https://shop.example.com/orders/1' }] });
+  server.rpc.chrome_focus_tab = () => ({ focused: true });
+  const app = await mountApp(t, { server }); await app.navigate('activity'); await selectProfile(app, '#activity-profile', a.id); await app.flush();
+  assert.match(app.text('#operations'), /批量操作（chrome_batch）/);
+  app.$$('#operations [data-recover]')[0]!.click(); await app.flush();
+  assert.match(app.text('#operation-recovery-context'), /批量操作（chrome_batch）/);
+  assert.equal(app.$('#operation-recovery-tab-actions').hidden, false);
+  app.click('#operation-recovery-show-tab'); await app.flush();
+  assert.deepEqual(lastCall(server, 'chrome_focus_tab'), { profileId: a.id, tabId: 7 }); assert.match(app.text('#operation-recovery-tab-status'), /已切到这个标签页/);
+  app.click('#cancel-operation-recovery'); await app.flush();
+  app.$$('#operations [data-recover]')[1]!.click(); await app.flush();
+  assert.equal(app.$('#operation-recovery-tab-actions').hidden, true, '标签页已经关了'); assert.equal(app.text('#operation-recovery-tab-status'), '', '上一条的状态不带过来');
+});
+
 test('离线浏览器的操作记录不去读标签页', async t => {
   const a = { ...online(1, '个人'), online: false }, server = createServer({ profiles: [a] });
   server.rpc.chrome_operations = operationsRpc(unknownOps(a.id, 1));
@@ -384,6 +401,49 @@ test('概览：有 Agent 用过浏览器就收起首次试用卡片，主按钮�
   server.agents = [{ ...agent, lastUsedAt: '2026-11-02T14:00:00.000Z' }]; await app.tick();
   assert.equal(app.$('.usage-panel').hidden, true);
   assert.equal(app.$('#overview-next').href, '#agents'); assert.match(app.text('#overview-next'), /查看 Agent 连接/); assert.equal(app.$('#journey-use').classList.contains('complete'), true);
+});
+
+test('概览：Agent 已经授权（install 会接好）但还没连上，叫人去 Agent 里开会话，不再叫人新建授权', async t => {
+  const agent = { id: 'a1', label: 'codex', location: 'local', connectionState: 'disconnected', sessionCount: 0, tabs: [], sessions: [], activeOperations: 0, readOnly: false };
+  const server = createServer({ profiles: [online(1, '个人')], agents: [agent, { ...agent, id: 'a2', label: 'claude' }] }), app = await mountApp(t, { server });
+  assert.equal(app.text('#overview-title'), '浏览器连好了，去 Agent 里试试。');
+  assert.match(app.text('#overview-description'), /已授权 2 个 Agent，还没有一个连上/); assert.doesNotMatch(app.text('#overview-description'), /创建独立授权/);
+  assert.equal(app.$('#overview-next').href, '#overview', '主按钮直接带到试用指令'); assert.match(app.text('#overview-next'), /开始使用/);
+  server.agents = [{ ...agent, lastUsedAt: '2026-11-02T14:00:00.000Z' }]; await app.tick();
+  assert.equal(app.text('#overview-title'), '浏览器已就绪。', '用过的 Agent 只是这会儿没连着'); assert.match(app.text('#overview-description'), /新开会话就能用/);
+  assert.equal(app.$('#overview-next').href, '#agents'); assert.match(app.text('#overview-next'), /查看 Agent 连接/);
+  server.agents = []; await app.tick();
+  assert.equal(app.text('#overview-title'), '浏览器连好了，接入 Agent 吧。', '一个授权都没有时才叫人接入'); assert.match(app.text('#overview-next'), /接入 Agent/);
+});
+
+test('浏览器都暂停着：概览叫人到扩展里继续连接，不引到配对；暂停的卡片不给“移除”', async t => {
+  const paused = { ...online(1, '个人'), online: false, offline: { reason: 'user' } }, gone = { ...online(2, '旧电脑'), online: false };
+  const server = createServer({ profiles: [paused] }); server.hooks['GET /browser-pairings'] = () => ({ status: 200, body: { pairings: [] } });
+  const app = await mountApp(t, { server });
+  assert.equal(app.text('#overview-title'), '浏览器暂停着。'); assert.match(app.text('#overview-description'), /继续连接/); assert.doesNotMatch(app.text('#overview-description'), /重新连接|配对/);
+  assert.equal(app.$('#overview-next').href, '#accounts'); assert.match(app.text('#overview-next'), /查看浏览器/);
+  server.profiles = [paused, gone]; await app.tick(); await app.navigate('accounts');
+  const removable = app.$$('#profiles .profile-card').map(card => card.querySelectorAll('button').some(b => b.textContent.startsWith('移除')));
+  assert.deepEqual(removable, [false, true], '暂停的点“继续连接”就回来；真离线的才给移除');
+  assert.equal(app.text('#overview-title'), '打开浏览器，继续连接。', '有没暂停的离线浏览器时按离线说');
+});
+
+test('配对码被扩展用掉后收尾：清掉用过的码；名称没动过就一起清空并收起“连接另一个 Chrome”', async t => {
+  const server = createServer({ profiles: [online(1, '个人')] }); let pairings: any[] = [], next = 20;
+  server.hooks['GET /browser-pairings'] = () => ({ status: 200, body: { pairings } });
+  server.hooks['POST /browser-pairings'] = request => { const id = uuid(++next); pairings = [...pairings, { id, label: request.body.label, revoked: false, canManage: false }]; return { status: 201, body: { pairingId: id, connectionCode: `sf-connect:code-${next}` } }; };
+  const bind = async (n: number, label: string) => { pairings = pairings.map(p => p.id === uuid(20 + n) ? { ...p, profileId: uuid(n + 1) } : p); server.profiles = [...server.profiles, online(n + 1, label)]; await app.tick(); };
+  const app = await mountApp(t, { server }); await app.navigate('accounts');
+  app.$('#add-browser').open = true; app.$('#pair-browser-label').value = '新电脑'; app.click('#create-browser-pairing'); await app.flush();
+  assert.equal(app.$('#browser-connection-code').value, 'sf-connect:code-21'); assert.equal(app.$('#browser-pairing-created').hidden, false);
+  await app.tick(); assert.equal(app.$('#browser-connection-code').value, 'sf-connect:code-21', '还没用掉就留着');
+  await bind(1, '新电脑');
+  assert.equal(app.$('#browser-connection-code').value, ''); assert.equal(app.$('#browser-pairing-created').hidden, true); assert.equal(app.$('#copy-browser-pairing').disabled, true);
+  assert.equal(app.$('#pair-browser-label').value, ''); assert.equal(app.$('#add-browser').open, false);
+  // 用户已经在填下一个名称：只清掉用过的码，名称和展开状态都不动。
+  app.$('#add-browser').open = true; app.$('#pair-browser-label').value = '第三台'; app.click('#create-browser-pairing'); await app.flush();
+  app.$('#pair-browser-label').value = '第四台'; await bind(2, '第三台');
+  assert.equal(app.$('#browser-connection-code').value, ''); assert.equal(app.$('#pair-browser-label').value, '第四台'); assert.equal(app.$('#add-browser').open, true);
 });
 
 test('概览里单个浏览器的“管理”直达浏览器页里它那张卡片，“管理全部”不标', async t => {

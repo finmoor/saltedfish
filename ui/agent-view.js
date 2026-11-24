@@ -51,11 +51,17 @@ function compactSourceAddress(source, preferredAddress) {
   }
   return (candidates.find(item => item.parsed.family === 4) || candidates[0])?.value;
 }
+// install 和 connect 给客户端建的授权，名字就是客户端代号（claude、claude-desktop…）。界面上显示成和命令行一样的名字，
+// 头像也分开（Claude Code 和 Claude Desktop 原来都是 CL）。用户自己起的名字原样显示。
+const CLIENT_NAMES = { codex: ['Codex', 'CX'], opencode: ['OpenCode', 'OC'], claude: ['Claude Code', 'CC'], 'claude-desktop': ['Claude Desktop', 'CD'], pi: ['pi', 'PI'], agy: ['agy', 'AG'], codebuddy: ['CodeBuddy', 'CB'], workbuddy: ['WorkBuddy', 'WB'] };
+/** @param {string | undefined} label */
+export function agentDisplayName(label) { return (label && Object.hasOwn(CLIENT_NAMES, label) ? CLIENT_NAMES[/** @type {keyof typeof CLIENT_NAMES} */ (label)][0] : label) || '未命名 Agent'; }
 export function agentCard(agent, options = {}) {
   const card = node('article', undefined, `agent-card${options.compact ? ' agent-compact' : ''}`); card.dataset.agentId = agent.id;
-  const initial = (Array.from(agent.label || 'A')[0] || 'A').toUpperCase();
-  const clientMark = /opencode/i.test(agent.label) ? 'OC' : /codex/i.test(agent.label) ? 'CX' : /claude/i.test(agent.label) ? 'CL' : initial;
-  const identity = node('div', undefined, 'agent-identity'), name = node(options.compact ? 'h4' : 'h3', agent.label || '未命名 Agent'), mark = node('span', options.compact ? clientMark : initial, 'agent-avatar');
+  const known = agent.label && Object.hasOwn(CLIENT_NAMES, agent.label) ? CLIENT_NAMES[/** @type {keyof typeof CLIENT_NAMES} */ (agent.label)] : undefined;
+  const initial = known?.[1] ?? (Array.from(agent.label || 'A')[0] || 'A').toUpperCase();
+  const clientMark = known?.[1] ?? (/opencode/i.test(agent.label) ? 'OC' : /codex/i.test(agent.label) ? 'CX' : /claude/i.test(agent.label) ? 'CL' : initial);
+  const identity = node('div', undefined, 'agent-identity'), name = node(options.compact ? 'h4' : 'h3', agentDisplayName(agent.label)), mark = node('span', options.compact ? clientMark : initial, 'agent-avatar');
   mark.setAttribute('aria-hidden','true');
   const text = node('div'); text.append(name); const badges = node('div', undefined, 'agent-badges');
   if(!options.unified)badges.append(node('span', agent.location === 'remote' ? '远程' : '本机', `agent-source ${agent.location === 'remote' ? 'remote' : 'local'}`));
@@ -153,7 +159,7 @@ export function groupCard(group, options = {}) {
   if (options.onRelease) actions.append(groupButton('结束并释放', '解散标签组、释放占用，标签页留着。会话还连着的话，下次开标签页会再建一个组。', button => options.onRelease(group, button)));
   card.append(identity, state, work); if (actions.children.length) card.append(actions); return card;
 }
-function operationLabel(operation) {
+export function operationLabel(operation) {
   const labels = {'page.action':'操作网页','page.evaluate':'执行页面脚本','page.wait':'等待页面','page.navigate':'页面导航','page.upload':'上传文件','page.screenshot':'截图','page.inspect':'读取页面','page.cdp':'浏览器操作','page.batch':'批量操作','network.start':'捕获网络','network.body':'读取响应','downloads.start':'下载文件',
     chrome_action:'操作网页',chrome_evaluate:'执行页面脚本',chrome_wait:'等待页面',chrome_navigate:'页面导航',chrome_upload:'上传文件',chrome_screenshot:'截图',chrome_inspect:'读取页面',chrome_find:'查找页面元素',chrome_cdp:'浏览器操作',chrome_batch:'批量操作',chrome_network_start:'捕获网络',chrome_network_stop:'停止网络捕获',chrome_network_body:'读取响应',chrome_wait_response:'等待响应',chrome_download:'下载文件',chrome_downloads:'查询下载',chrome_wait_download:'等待下载',chrome_claim_tab:'占用标签页',chrome_release_tab:'释放标签页',chrome_tabs:'读取标签页',chrome_new_tab:'打开标签页',chrome_close_tab:'关闭标签页',chrome_focus_tab:'显示标签页',chrome_wait_tab:'等待新标签页',chrome_dialog:'处理网页弹窗',chrome_accessibility:'读取页面结构',chrome_contexts:'读取页面框架',chrome_profiles:'读取浏览器',chrome_events:'读取浏览器事件',chrome_read_result:'读取结果文件',chrome_file_begin:'准备传入文件',chrome_file_write:'接收文件',chrome_file_commit:'校验文件',chrome_file_read:'读取文件',chrome_file_export:'导出下载文件',chrome_file_status:'查询文件传输'};
   return labels[operation] || '浏览器操作';

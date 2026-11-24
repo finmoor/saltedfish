@@ -1,4 +1,8 @@
 import { profileLabel, canOfferAbandon, lastSeenText, errorCode, ABANDON_AFTER_HOURS } from './identity.js';
+import { operationLabel } from './agent-view.js';
+
+/** 操作记录里的工具名：先写人看得懂的，后面带原名，方便对照 Agent 的输出。 @param {string} tool */
+const toolText = tool => `${operationLabel(tool)}（${tool}）`;
 
 /**
  * Operation history owns its selection generation, pagination, recovery dialog,
@@ -21,6 +25,7 @@ export function initializeActivity({ call, request, el, button, run, status, get
   const reviewed = required('#operation-reviewed', HTMLInputElement), confirmButton = required('#confirm-operation-recovery', HTMLButtonElement);
   const cancelButton = required('#cancel-operation-recovery', HTMLButtonElement), context = required('#operation-recovery-context', HTMLElement);
   const feedback = required('#operation-recovery [data-feedback]', HTMLElement);
+  const tabActions = required('#operation-recovery-tab-actions', HTMLElement), showTab = required('#operation-recovery-show-tab', HTMLButtonElement), tabStatus = required('#operation-recovery-tab-status', HTMLElement);
   // 逐条核查对话框里的离线说明，以及从这里放弃整个配置的出口。
   const offlineHint = required('#operation-recovery-offline', HTMLElement), offlineText = required('#operation-recovery-offline-text', HTMLElement);
   const abandonFromRecovery = required('#abandon-from-recovery', HTMLButtonElement);
@@ -84,7 +89,7 @@ export function initializeActivity({ call, request, el, button, run, status, get
 
   // 操作记录只存了标签号。浏览器在线时，列表先画出来，再补上这个标签号现在对应的页面，方便人工找到它核查。
   // Chrome 重启后标签号会重新分配，所以写“现在是”，不说成当时操作的页面；读不到就只留标签号。
-  /** @type {Map<number, string>} */
+  /** @type {Map<number, { note: string, exists: boolean }>} */
   let tabNotes = new Map();
   /** @param {import('./contracts.js').ActivitySelection} selection @param {number} revision @param {[HTMLElement, number][]} targets */
   async function describeTabs(selection, revision, targets) {
@@ -97,7 +102,7 @@ export function initializeActivity({ call, request, el, button, run, status, get
     for (const [target, tabId] of targets) {
       const tab = tabs.find(item => item.tabId === tabId);
       const note = tab ? `现在是：${tab.title || '(无标题)'}${tab.url ? ` · ${tab.url}` : ''}` : '现在没有这个标签页（关掉了，或者 Chrome 重启过）';
-      notes.set(tabId, note); target.append(el('div', note, 'url'));
+      notes.set(tabId, { note, exists: !!tab }); target.append(el('div', note, 'url'));
     }
     tabNotes = notes;
   }
@@ -132,7 +137,7 @@ export function initializeActivity({ call, request, el, button, run, status, get
         row.dataset.operationId = item.id;
         const target = el('div', item.tabId === null ? '整个浏览器' : `标签 ${item.tabId}`, 'operation-target');
         if (typeof item.tabId === 'number') targets.push([target, item.tabId]);
-        description.append(el('div', item.tool), target, el('small', new Date(item.startedAt).toLocaleString()), el('code', item.id, 'operation-id'));
+        description.append(el('div', toolText(item.tool)), target, el('small', new Date(item.startedAt).toLocaleString()), el('code', item.id, 'operation-id'));
         if (item.errorCode) description.append(el('div', item.errorCode, 'url'));
         if (item.state === 'unknown' && !item.acknowledgedAt) {
           const control = button('核查并解除保护', () => openRecovery(item, selection, revision));
@@ -160,7 +165,11 @@ export function initializeActivity({ call, request, el, button, run, status, get
     recovery = { item, selection, revision };
     returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     const tabNote = typeof item.tabId === 'number' ? tabNotes.get(item.tabId) : undefined;
-    context.textContent = `${profile ? profileLabel(profile, getProfiles()) : selection.profileId} · ${item.tabId === null ? '整个浏览器' : `标签 ${item.tabId}`}${tabNote ? `（${tabNote}）` : ''}\n${item.tool}\n操作 ID：${item.id}`;
+    context.textContent = `${profile ? profileLabel(profile, getProfiles()) : selection.profileId} · ${item.tabId === null ? '整个浏览器' : `标签 ${item.tabId}`}${tabNote ? `（${tabNote.note}）` : ''}\n${toolText(item.tool)}\n操作 ID：${item.id}`;
+    // 标签页还在、浏览器在线时，给一个直接去那个标签页的按钮，不用自己在一堆窗口里找。
+    const tabId = item.tabId;
+    tabActions.hidden = !(typeof tabId === 'number' && tabNote?.exists && profile?.online !== false); tabStatus.textContent = '';
+    showTab.onclick = () => { if (typeof tabId !== 'number') return; void run(showTab, async () => { await call('chrome_focus_tab', { profileId: selection.profileId, tabId }); tabStatus.textContent = '已切到这个标签页，去那个 Chrome 窗口里看。'; }); };
     // 配置当前离线时服务端会拒绝解除：提前说明原因，并在它长期不会再出现时给出放弃整个配置的出口（在线配置不显示任何提示）。
     const offline = profile?.online === false ? profile : undefined, offer = !!offline && canOfferAbandon(offline, getCheckedAt());
     offlineHint.hidden = !offline; abandonFromRecovery.hidden = !offer;

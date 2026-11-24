@@ -2,7 +2,7 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mountApp, createServer, uuid, defer } from './fake-app.js';
 import { choose, FakeEvent, installDom } from './fake-dom.js';
-import { agentConnection, agentCard, groupCard, groupState } from '../ui/agent-view.js';
+import { agentConnection, agentCard, agentDisplayName, groupCard, groupState } from '../ui/agent-view.js';
 
 const profile=(id:number,label:string)=>({id:uuid(id),label,online:true,version:'0.2.12',capabilities:['interaction-v5']});
 const agent=(id:number,label:string,extra={})=>({id:uuid(id),label,location:'local',connectionState:'disconnected',connectionEvidence:'configuration',sessionCount:0,activeOperations:0,readOnly:false,tabs:[],...extra});
@@ -15,6 +15,14 @@ function sourceCards(t:TestContext){
   return host.children[0]!;
  };
 }
+
+test('接入向导写的客户端名在卡片上显示成产品名，自己起的名字原样显示',t=>{
+ const dom=installDom('<!doctype html><html><head></head><body><main id="cards"></main></body></html>');t.after(()=>dom.uninstall());
+ assert.equal(agentDisplayName('claude'),'Claude Code');assert.equal(agentDisplayName('claude-desktop'),'Claude Desktop');assert.equal(agentDisplayName('opencode'),'OpenCode');
+ assert.equal(agentDisplayName('我的脚本'),'我的脚本');assert.equal(agentDisplayName('toString'),'toString','不会读到原型上的名字');assert.equal(agentDisplayName(''),'未命名 Agent');
+ const card=agentCard(agent(13,'codebuddy') as any,{compact:true}) as any;
+ assert.equal(card.querySelector('h4').textContent,'CodeBuddy');assert.equal(card.querySelector('.agent-avatar').textContent,'CB');
+});
 
 test('compact优先展示与peer一致的登记IP，所有原地址与登记说明保留在原生详情中',t=>{
  const render=sourceCards(t),addresses=['127.0.0.1','169.254.2.3','10.1.2.3','192.0.2.30'];

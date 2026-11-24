@@ -307,7 +307,9 @@ export class BrowserService {
       return waitForResponse({...source,assertAllowed:allowed},profileId,tabId,args as unknown as ResponseWaitArgs,waitDeadline);
     }
     if (name === 'chrome_profiles') {
-      return { profiles: this.listProfiles(principal), note: '只列出授权给你这个客户端的浏览器；用户说的那个不在列表里，就请用户在 SaltedFish 管理页“访问权限”给你授权，或在“浏览器”里先配对那个 Chrome。名称是用户别名，并非网站账号验证。online=false 时不执行或切换账号，等待原配置重新连接；offline 说明离线原因和恢复办法；extensionReload 说明扩展后台还在跑旧代码，新功能用不了，转告用户按它说的重新加载。' };
+      // 能力清单只给管理员（doctor、诊断）看。Agent 用不上：缺能力时服务端直接报需要更新；每个浏览器省下六七百字，会话开头就要读这一份。
+      const profiles = this.listProfiles(principal).map(profile => { if (principal.admin) return profile; const { capabilities: _capabilities, ...rest } = profile as typeof profile & { capabilities?: unknown }; return rest; });
+      return { profiles, note: '只列出授权给你这个客户端的浏览器；用户说的那个不在列表里，就请用户在 SaltedFish 管理页“访问权限”给你授权，或在“浏览器”里先配对那个 Chrome。名称是用户别名，并非网站账号验证。online=false 时不执行或切换账号，等待原配置重新连接；offline 说明离线原因和恢复办法；extensionReload 说明扩展后台还在跑旧代码，新功能用不了，转告用户按它说的重新加载。' };
     }
     if (name === 'chrome_operations') return this.state.list(profileId, args.state as string | undefined, Number(args.offset), Number(args.limit), args.acknowledged as boolean | undefined);
     if (name === 'chrome_task_submit') { const { profileId: _, tabId: __,submissionId,...plan } = args; return this.state.asSubmitter(principal, () => this.tasks.submit(profileId, tabId, plan, principal,undefined,submissionId as string|undefined)); }

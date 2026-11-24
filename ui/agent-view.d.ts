@@ -8,5 +8,7 @@ export function agentLastUsed(agent:AgentSummary):string;
 export function replaceGroupCards(container:HTMLElement,cards:HTMLElement[]):void;
 export function groupState(group:AgentGroup): {label:string;tone:string;detail:string};
 export function groupCard(group:AgentGroup,options?:{profileName?:string;onShow?:(group:AgentGroup,button:HTMLButtonElement)=>unknown;onRelease?:(group:AgentGroup,button:HTMLButtonElement)=>unknown}):HTMLElement;
+export function operationLabel(operation:string):string;
+export function agentDisplayName(label:string|undefined):string;
 export function sortAgents(agents:AgentSummary[],unified?:boolean):AgentSummary[];
 export function agentCard(agent:AgentSummary,options?:{currentProfileId?:string;profileNames?:Map<string,string>;tabTitles?:Map<string,string>;compact?:boolean;preferredAddress?:string;unified?:boolean}):HTMLElement;

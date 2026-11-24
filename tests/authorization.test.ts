@@ -22,6 +22,9 @@ test('客户端只能访问指定账号，只读授权拒绝任意 JS 与批量�
   const principal = f.service.state.authenticate(key.token)!;
   const profiles = await f.service.invoke('chrome_profiles', {}, 'reader', principal);
   assert.deepEqual((profiles.data as { profiles: { id: string }[] }).profiles.map(profile => profile.id), [a.id]);
+  assert.equal('capabilities' in (profiles.data as { profiles: object[] }).profiles[0]!, false, 'Agent 拿到的列表不带能力清单');
+  const admin = await f.service.invoke('chrome_profiles', {}, 'admin');
+  assert.ok(Array.isArray((admin.data as { profiles: { capabilities?: string[] }[] }).profiles.find(profile => 'capabilities' in profile)?.capabilities), '管理员（doctor、诊断）照旧拿到能力清单');
   assert.equal((await f.service.invoke('chrome_tabs', { profileId: b.id }, 'reader', principal)).error?.code, 'PROFILE_NOT_AUTHORIZED');
   assert.equal((await f.service.invoke('chrome_evaluate', { profileId: a.id, tabId: 1, expression: '1' }, 'reader', principal)).error?.code, 'CLIENT_READ_ONLY');
   assert.equal((await f.service.invoke('chrome_tabs', { profileId: a.id }, 'reader', principal)).ok, true);

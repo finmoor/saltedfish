@@ -379,7 +379,7 @@ export class ClientSetup {
       if (old?.exposure === undefined) notices.push('工具按需加载（exposure 设为 deferred），可以在 pi 的 /mcp 里改。');
       if (selection.projectDirectory) notices.push('pi 只在受信任的项目里读取 .pi/mcp.json。');
     }
-    if (client === 'claude-desktop') attention('Claude Desktop 需完全退出并重新启动；工具审批请在 Desktop 内确认，SaltedFish 不改它的审批设置。');
+    if (client === 'claude-desktop') attention('Claude Desktop 开着的话，先完全退出（托盘里也退出）再接入，写完再打开；不然它退出时可能用旧配置盖掉刚写入的。工具审批在 Desktop 里确认，SaltedFish 不改它的审批设置。');
     if (client === 'workbuddy') attention('WorkBuddy 需在 MCP 设置中刷新并批准 SaltedFish 配置，再新开会话；连接配置更新后可能需要重新批准。SaltedFish 不改它的审批设置。');
     if (client === 'codebuddy') notices.push('CodeBuddy 项目和受管理的设置可能覆盖用户配置；项目 MCP 的首次启用仍需在客户端确认。');
     if (client === 'codex' && trust === 'service' && Object.values(old?.tools || {}).some((tool: any) => tool.approval_mode && tool.approval_mode !== 'approve')) attention('保留已有的逐工具例外规则；这些工具仍按你原来的选择审批。');
