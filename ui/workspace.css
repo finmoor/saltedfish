@@ -100,8 +100,10 @@ main:has(> #overview:not([hidden])) > .topbar button:focus-visible { outline-col
 .pair-steps #pairing-feedback:empty { display: none; }
 .pair-download { display: inline-flex; align-items: center; min-height: 38px; padding: 7px 14px; border: 1px solid var(--line-strong); border-radius: 9px; background: #ffffff; color: var(--ink); font-size: 13.5px; font-weight: 600; text-decoration: none; }
 .pair-download:hover { border-color: var(--blue); color: var(--blue); }
-.pair-alternative { margin: 10px 0 0; }
-.pair-alternative > summary { font-size: 13px; padding: 6px 0; }
+.pair-option { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; }
+.pair-option h4 { font-size: 14px; margin: 0 0 4px; }
+.pair-option p { margin: 0 0 8px; }
+.pair-option .copy-field { margin-top: 8px; }
 .pair-form { display: grid; gap: 18px; max-width: 420px; margin-top: 10px; }
 .pair-form > label :is(input, select) { width: 100%; }
 .pair-form .check { padding: 0; }
@@ -254,9 +256,6 @@ main:has(> #overview:not([hidden])) > .topbar button:focus-visible { outline-col
 .login-step-heading { display: flex; align-items: flex-start; gap: 12px; }
 .login-step-heading h2 { font-size: 17px; line-height: 28px; letter-spacing: 0; }
 .login-step-number { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--blue); color: #ffffff; font: 700 15px/1 var(--display); }
-.login-methods { display: flex; gap: 4px; margin: 20px 0 16px; padding: 4px; background: var(--block); border-radius: 11px; }
-.login-methods button { flex: 1; min-height: 40px; padding: 8px 12px; border-color: transparent; background: transparent; color: var(--muted); white-space: normal; }
-.login-methods button[aria-pressed=true] { background: #ffffff; color: var(--blue); box-shadow: 0 1px 3px rgba(31, 35, 40, .14); }
 #login-instruction { font-size: 14px; line-height: 1.7; color: var(--muted); margin: 0; }
 .launch-command .copy-field { flex-wrap: wrap; background: var(--block); border: 0; }
 .launch-command .copy-field code { flex: 1; color: var(--ink); }

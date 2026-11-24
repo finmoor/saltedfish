@@ -11,7 +11,7 @@ const workspace = await import(new URL('../ui/workspace.js', import.meta.url).hr
 // ui:0
 test('accessScopeLabel：全部账号、同名加短 ID、离线标注、找不到的 ID 回退完整 ID、空范围有说明', () => {
   const profiles = [{ id: 'aaaaaaaa-0001', label: '工作', online: true }, { id: 'bbbbbbbb-0002', label: '工作', online: false }, { id: 'cccccccc-0003', label: '个人', online: true }];
-  assert.equal(identity.accessScopeLabel('*', profiles), '所有已配对账号');
+  assert.equal(identity.accessScopeLabel('*', profiles), '全部浏览器（含以后新增）');
   assert.equal(identity.accessScopeLabel(['aaaaaaaa-0001'], profiles), '工作 · aaaaaaaa');
   assert.equal(identity.accessScopeLabel(['bbbbbbbb-0002'], profiles), '工作 · bbbbbbbb（未连接）');
   assert.equal(identity.accessScopeLabel(['cccccccc-0003', 'dddddddd-0004'], profiles), '个人、dddddddd-0004');
@@ -226,10 +226,27 @@ test('扩展版本：按数字比较，10 比 9 新，缺的段按 0 算', async
 test('管理页的更新提示：能自己更新的扩展点按钮，旧扩展手动覆盖文件夹，离线或已是最新不提示', () => {
   const release = { version: '0.3.8' }, profile = { online: true, version: '0.3.8', capabilities: ['self-update-v1'] };
   assert.equal(identity.extensionUpdateInstruction(profile, release), ''); assert.equal(identity.extensionUpdateInstruction({ ...profile, version: '0.3.7', online: false }, release), ''); assert.equal(identity.extensionUpdateInstruction({ ...profile, version: '0.3.7' }, undefined), '');
-  assert.match(identity.extensionUpdateInstruction({ ...profile, version: '0.3.7' }, release), /工具栏.*更新/);
-  assert.equal(identity.extensionUpdateInstruction({ ...profile, version: '0.3.6', capabilities: [] }, release), identity.extensionRefreshInstruction);
-  assert.match(identity.extensionRefreshInstruction, /下载新的扩展包/);
+  // 弹窗里的“更新”只能打开设置页，要在设置页再点一次：提示照这两步写
+  assert.match(identity.extensionUpdateInstruction({ ...profile, version: '0.3.7' }, release), /工具栏.*去设置页更新.*设置页里点“更新”/);
+  assert.equal(identity.extensionUpdateInstruction({ ...profile, version: '0.3.6', capabilities: [] }, release), identity.extensionRefreshInstruction({ capabilities: [] }));
+  // 缺新能力时：没有一键更新的扩展按文件夹来源说（install 目录刷新、ZIP 目录覆盖）；有一键更新的照常点“更新”，不叫人下载或“直接刷新”
+  const manual = identity.extensionRefreshInstruction({ capabilities: [] }), selfUpdate = identity.extensionRefreshInstruction({ capabilities: ['self-update-v1'] });
+  assert.match(manual, /下载新的扩展包/); assert.match(manual, /install 打印的目录.*刷新/); assert.match(manual, /ZIP 解压.*覆盖/);
+  assert.match(selfUpdate, /去设置页更新/); assert.doesNotMatch(selfUpdate, /下载|直接刷新/);
+  assert.match(identity.extensionRefreshInstruction(undefined), /下载新的扩展包/);
   // 应用商店版没有“更新”按钮，也不该叫用户覆盖文件夹（商店装的文件夹改了会被 Chrome 判成已损坏）
   const store = identity.extensionUpdateInstruction({ ...profile, version: '0.3.7', capabilities: ['store-build'] }, release);
   assert.match(store, /应用商店/); assert.doesNotMatch(store, /工具栏|覆盖/);
+});
+
+test('离线卡片：暂停的指到扩展里继续、不叫人重新连接；普通离线和原因不明的再提重新连接', () => {
+  for (const reason of ['user', 'agent', 'debugging-canceled']) {
+    const profile = { online: false, offline: { reason } };
+    assert.equal(identity.isPaused(profile), true, reason); assert.match(identity.offlineDescription(profile), /继续连接/); assert.doesNotMatch(identity.offlineDescription(profile), /重新连接/);
+  }
+  assert.match(identity.offlineDescription({ online: false, offline: { reason: 'debugging-canceled' } }), /提示条/);
+  for (const profile of [{ online: false, offline: { reason: 'disconnected' } }, { online: false }]) {
+    assert.equal(identity.isPaused(profile), false); assert.match(identity.offlineDescription(profile), /会自动连上/); assert.match(identity.offlineDescription(profile), /重装过或换了文件夹，才点“重新连接”/);
+  }
+  assert.equal(identity.isPaused({ online: true, offline: { reason: 'user' } }), false, '在线的不算暂停');
 });

@@ -84,15 +84,24 @@ saltedfish install
 
 `install` 启动服务、接入本机 Agent，并打印扩展目录。然后：
 
-1. **装扩展**：在 `chrome://extensions` 开启“开发者模式”，“加载已解压的扩展程序”，选打印出的目录。
-2. **配对**：`saltedfish dashboard` 打开管理页，在“浏览器”里生成配对码，粘贴到扩展里。
-3. **开始用**：在 Agent 里新开一个会话，例如：
+1. **装扩展**：在 `chrome://extensions` 开启“开发者模式”，点“加载已解压的扩展程序”，按 Chrome 在哪台电脑选文件夹：
+   - Chrome 就在这台电脑上：选 `install` 打印的目录。服务升级时它跟着更新。
+   - Chrome 在别的电脑上：用管理页“浏览器”里下载的扩展 ZIP（带着服务地址），或者 [Releases](https://github.com/finmoor/saltedfish/releases/latest) 里同版本的 ZIP，解压到以后不会挪动的文件夹再选它。
+2. **配对**：`saltedfish dashboard` 打开管理页，在“浏览器”里生成配对码，粘贴到扩展里点“连接”。配对码里带着服务地址，不用另填。
+3. **开始用**：在 Agent 里新开一个会话，先发一句只读的试试：
 
-> 使用 SaltedFish。先列出浏览器配置，找到“工作”，只操作这个配置。新开一个标签页完成任务，最后核对页面结果。
+> 用 SaltedFish 列出我的浏览器和每个浏览器当前的标签页，告诉我每个页面的标题，先不要修改网页。
+
+之后照常说要做的事，比如“在‘工作’这个浏览器里新开一个标签页，查一下明天上海的天气”。
 
 ### 让服务器上的 Agent 操作你电脑上的 Chrome
 
-在 Linux 服务器上运行同样两条命令（默认监听内网 IP 的 18445 端口），再运行 `saltedfish dashboard`。在你的电脑上打开它打印的链接，生成配对码，再下载扩展：管理页上直接下载，或者从 [Releases](https://github.com/finmoor/saltedfish/releases/latest) 下载和服务同版本的 `saltedfish-extension-<版本>.zip`。解压到一个不会挪动的文件夹，加载到 Chrome 里，粘贴配对码。
+在 Linux 服务器上运行同样两条命令（默认监听内网 IP 的 18445 端口），再运行 `saltedfish dashboard`。先确认你的电脑打得开它打印的地址：
+
+- 服务器和你的电脑在同一个可信内网：直接用默认的 HTTP 地址。
+- 云服务器或跨网络：默认路由的 IP 多半是你的电脑连不到的私网地址，先按 [HTTP 与 HTTPS](docs/npm.md#http-与-https) 配好你的电脑能访问的 HTTPS 地址，或者用 VPN 接进同一个内网。
+
+在你的电脑上打开链接，生成配对码，再下载扩展：管理页上直接下载，或者从 [Releases](https://github.com/finmoor/saltedfish/releases/latest) 下载和服务同版本的 `saltedfish-extension-<版本>.zip`。解压到一个不会挪动的文件夹，加载到 Chrome 里，粘贴配对码。
 
 Agent 要和服务装在同一台电脑上。内网用的是不加密的 HTTP，跨公网要配证书，见 [安装与运维](docs/npm.md)。
 
@@ -191,7 +200,7 @@ Agent 连服务的 MCP 入口，扩展主动连服务，服务负责授权、排
 | 恢复 | 操作派发前写入 SQLite；进程被强杀或重启后保护仍在 |
 | 长结果 | 大 JSON 和图片落盘，分页读取 |
 | 用户接管 | 扩展里可以暂停；在 Chrome 里手动停止调试会暂停连接，不自动重新接管 |
-| 升级 | `saltedfish upgrade` 切换失败自动回退；手动加载的扩展在设置页一键更新，配对保留 |
+| 升级 | `saltedfish upgrade` 切换失败时，数据格式兼容就自动回退；手动加载的扩展在设置页一键更新，配对保留 |
 
 ## 安全与数据
 
@@ -210,7 +219,7 @@ Agent 连服务的 MCP 入口，扩展主动连服务，服务负责授权、排
 - 不设限说的是 SaltedFish 这个工具；Agent 所用模型和客户端自己的规则、审批不归它管。
 - Chrome 内部页面、其他扩展的页面、系统原生窗口、验证码和系统授权对话框没有自动化保证。
 - 网页能观察到 DOM 和输入事件；不承诺网站识别不出自动化操作。
-- Agent 连着时，Chrome 每个标签页顶部有一条“正在调试此浏览器”的提示条。Chrome 启动时带 `--silent-debugger-extension-api` 可以去掉，代价见 [安装与运维](docs/npm.md)。
+- Agent 连着时，Chrome 每个标签页顶部有一条“正在调试此浏览器”的提示条。Chrome 启动时带 `--silent-debugger-extension-api` 可以去掉，做法和代价见[去掉提示条](docs/npm.md#去掉正在调试此浏览器提示条)。
 - Chrome 的调试接口可能和 DevTools、其他扩展冲突，部分 CDP 域不能通过扩展使用。
 - 已经发出去的动作撤不回来。任务运行时手动改网页可能影响结果，手动接管前先在扩展里暂停。
 

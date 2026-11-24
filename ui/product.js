@@ -33,7 +33,7 @@ export function initializeProduct({ call, request, el, button, run, status, getP
   function downloadJson(value, name) { const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); const link = el('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
   function currentTarget() {
     const profileId = $('#task-profile').value, selected = $('#task-tab').value;
-    if (!profileId || !selected) throw new Error('先选择已连接的账号和目标标签页。');
+    if (!profileId || !selected) throw new Error('先选择已连接的浏览器和目标标签页。');
     return { profileId, tabId: Number(selected) };
   }
   async function refreshTabs() {
@@ -63,7 +63,7 @@ export function initializeProduct({ call, request, el, button, run, status, getP
       if (sequence !== taskRequest || profileId !== $('#task-profile').value || offset !== taskOffset || query !== $('#task-search').value || filter !== $('#task-filter').value) return;
       const root = $('#task-list'); root.className = '';
       taskNext = data.nextOffset; $('#task-page-label').textContent = `${data.total} 项 · 第 ${Math.floor(taskOffset / 10) + 1} 页`; $('#task-prev').disabled = taskOffset === 0; $('#task-next').disabled = taskNext === null;
-      if (!data.items.length) root.replaceChildren(el('p', '这个账号还没有任务。新建一次，或运行已保存的流程。', 'empty'));
+      if (!data.items.length) root.replaceChildren(el('p', '这个浏览器还没有任务。新建一次，或运行已保存的流程。', 'empty'));
       const existing=new Map([...root.querySelectorAll('.task-row')].map(row=>[row.dataset.taskKey,row])),retained=new Set();let position=0;
       for (const task of data.items) {
         const key=profileId+'/'+task.id;let row=existing.get(key);
@@ -79,7 +79,7 @@ export function initializeProduct({ call, request, el, button, run, status, getP
         retained.add(row);if(root.children[position]!==row)root.insertBefore(row,root.children[position]||null);position++;
       }
       if(data.items.length)for(const node of [...root.childNodes])if(!retained.has(node))node.remove();
-      $('#task-live').textContent = `每个账号独立排队 · ${new Date().toLocaleTimeString()} 已更新`;
+      $('#task-live').textContent = `每个浏览器独立排队 · ${new Date().toLocaleTimeString()} 已更新`;
     } finally { if (sequence === taskRequest) updating = false; }
   }
   function renderTaskStep(step) {
@@ -252,18 +252,18 @@ export function initializeProduct({ call, request, el, button, run, status, getP
       const card = el('article', undefined, 'workflow'), fields = el('div', undefined, 'parameter-fields'), preview = el('div', undefined, 'plan-preview'), actions = el('div', undefined, 'row-actions'); preview.hidden = true;
       let prepared, pendingRun, parameterRevision = 0;
       card.dataset.workflowId = flow.id;
-      card.append(el('h3', flow.definition.name), el('small', `${flow.stepCount} 步 · 版本 ${flow.version} · ${archived ? '已归档' : '当前账号'}`));
+      card.append(el('h3', flow.definition.name), el('small', `${flow.stepCount} 步 · 版本 ${flow.version} · ${archived ? '已归档' : '当前浏览器'}`));
       if (flow.definition.description) card.append(el('p', flow.definition.description, 'muted'));
       for (const parameter of flow.definition.parameters) { const control = input(parameter.description || parameter.name); control.dataset.parameter = parameter.name; fields.append(field(parameter.name, control)); }
       const execute = button('在选定标签页运行', async () => {
         if (!prepared) throw new Error('请先预览本次参数。');
-        const target = currentTarget(); if (target.profileId !== profileId) throw new Error('账号已变化，请在当前账号重新选择流程。');
+        const target = currentTarget(); if (target.profileId !== profileId) throw new Error('浏览器已变化，请在当前浏览器重新选择流程。');
         const selected = prepared,requestRevision=parameterRevision; prepared = undefined;
         const payload={...target,workflowId:flow.id,revision:selected.revision,parameters:selected.parameters},key=JSON.stringify(payload);
         if(pendingRun?.key!==key)pendingRun={key,id:randomId()};
         try{await call('chrome_workflow_run',{...payload,submissionId:pendingRun.id});pendingRun=undefined;}
         catch(error){if(parameterRevision===requestRevision&&card.isConnected&&profileId===$('#task-profile').value)prepared=selected;throw error;}
-        status.textContent = '流程已加入该账号的任务队列。'; await refreshTasks();
+        status.textContent = '流程已加入这个浏览器的任务队列。'; await refreshTasks();
       }, 'secondary', () => !!prepared && profileId === $('#task-profile').value); execute.disabled = true;
       fields.addEventListener('input', () => { parameterRevision++; prepared = undefined; execute.disabled = true; preview.hidden = true; });
       actions.append(button('预览本次步骤', async () => {
@@ -281,7 +281,7 @@ export function initializeProduct({ call, request, el, button, run, status, getP
       management.append(button(archived ? '恢复使用' : '归档', async () => { await call('chrome_workflow_archive', { profileId, workflowId: flow.id, expectedRevision: flow.revision, archived: !archived }); await refreshWorkflows(); }));
       if (archived) management.append(button('永久删除', async () => { if (!confirm(`永久删除「${flow.definition.name}」及其全部版本？此操作不能恢复。`)) return; await call('chrome_workflow_remove', { profileId, workflowId: flow.id, expectedRevision: flow.revision, confirmed: true }); await refreshWorkflows(); }, 'danger'));
       const copy = el('details'), name = input('副本名称'), destination = choose(getProfiles().map(profile => [profile.id, profileLabel(profile,getProfiles())]), profileId); name.value = `${flow.definition.name} · 副本`.slice(0, 100); name.maxLength = 100;
-      const controls = el('div', undefined, 'copy-fields'); controls.append(field('复制到账号', destination), field('新名称', name), button('创建副本', async () => { await call('chrome_workflow_copy', { profileId, workflowId: flow.id, toProfileId: destination.value, name: name.value }); status.textContent = '副本已保存到明确选择的账号，尚未运行。'; await refreshWorkflows(); }));
+      const controls = el('div', undefined, 'copy-fields'); controls.append(field('复制到浏览器', destination), field('新名称', name), button('创建副本', async () => { await call('chrome_workflow_copy', { profileId, workflowId: flow.id, toProfileId: destination.value, name: name.value }); status.textContent = '副本已保存到明确选择的账号，尚未运行。'; await refreshWorkflows(); }));
       copy.append(el('summary', '复制流程'), controls); card.append(management, copy); root.append(card);
     }
   }

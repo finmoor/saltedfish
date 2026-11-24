@@ -120,7 +120,7 @@ test('没配对时只显示连接引导；下载包带来的地址预填好，�
 
 test('不知道服务地址时不把默认本机地址当成用户的服务，配对后回到正常页面并刷新设置里的地址',async t=>{
  const m=await mountOptions(t,undefined,{...unpaired,serviceKnown:false,settings:{...profile,serviceUrl:'http://127.0.0.1:17422'}});
- assert.equal(m.$('#setup-address').value,'');assert.equal(m.dom.doc.activeElement?.id,'setup-address');
+ assert.equal(m.$('#setup-address').value,'');assert.equal(m.dom.doc.activeElement?.id,'setup-code','配对码里带着地址，光标先放配对码');
  m.state.status={state:'connected',message:''};m.state.settings={...profile,serviceUrl:lan} as any;await m.tick();
  assert.equal(m.$('#setup').hidden,true);assert.equal(m.$('#workspace').hidden,false);assert.equal(m.field('serviceUrl').value,lan);
 });
@@ -184,7 +184,7 @@ test('有新版本：服务回滚到旧版本时不提示降级',async t=>{
 });
 
 test('有新版本：服务带的版本更新时显示版本和按钮',async t=>{
- const m=await mountOptions(t,undefined,newer,diskVersion('0.3.7') as any);await flush();assert.equal(m.$('#update-strip').hidden,false);assert.match(m.$('#update-title').textContent,/0\.3\.0-beta\.9/);assert.equal(m.$('#update-button').textContent,'更新');
+ const m=await mountOptions(t,undefined,newer,diskVersion('0.3.7') as any);await flush();assert.equal(m.$('#update-strip').hidden,false);assert.match(m.$('#update-title').textContent,/0\.3\.0-beta\.9/);assert.equal(m.$('#update-button').textContent,'去设置页更新','弹窗里的按钮只打开设置页，名字照实写');assert.match(m.$('#update-detail').textContent,/打开设置页，在那里点“更新”/);
 });
 
 test('有新版本：工具栏弹窗里点更新只打开标签页，不在弹窗里走文件夹选择',async t=>{

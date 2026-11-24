@@ -48,7 +48,7 @@ test('待核查提示：只有离线且长期未见的配置才多一个“放�
   assert.match(app.text('#overview-title'), /有操作需要先核查/);
   assert.deepEqual(labels(rowOf(app, '在线配置')), ['在线配置 · 核查 1 条']);
   assert.deepEqual(labels(rowOf(app, '旧配置')), ['旧配置 · 核查 2 条', '放弃此配置…']);
-  assert.match(rowOf(app, '旧配置').textContent, /未连接，最后在线 .+。如果这个配置已经不存在，可以放弃它的待核查记录/);
+  assert.match(rowOf(app, '旧配置').textContent, /未连接，最后在线 .+。扩展重装过或换了文件夹的，到“浏览器”里点“重新连接”接回后核查；这个 Chrome 配置已经不存在时，才放弃它的待核查记录/);
   assert.deepEqual(labels(rowOf(app, '刚关掉的')), ['刚关掉的 · 核查 1 条'], '离线才 2 小时：很可能只是浏览器关了');
   assert.match(rowOf(app, '刚关掉的').textContent, /未连接，最后在线 .+。请打开原来的 Chrome 继续连接后再核查；超过 24 小时没有出现，才可以放弃这个配置/);
   assert.deepEqual(labels(rowOf(app, '超过一天')), ['超过一天 · 核查 1 条', '放弃此配置…'], '超过 24 小时即可放弃');

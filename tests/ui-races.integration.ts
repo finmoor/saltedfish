@@ -127,5 +127,5 @@ test('已绑定账号的编辑流程不能经普通任务入口直接运行到�
   const h = await harness(t); await h.click('#workflow-list', '编辑'); await h.fill('.step-value', '固定内容');
   await h.page.select('#task-profile', h.b.id); await h.page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#task-tabs-refresh')!.disabled); await h.page.select('#task-tab', '7');
   await h.page.click('#task-form button[type=submit]'); await h.page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#task-form button[type=submit]')!.disabled);
-  assert.equal(h.f.service.state.tasks().length, 0); assert.ok(await h.page.$eval('#status', node => node.textContent!.includes('另一个账号')));
+  assert.equal(h.f.service.state.tasks().length, 0); assert.ok(await h.page.$eval('#status', node => node.textContent!.includes('另一个浏览器')));
 });

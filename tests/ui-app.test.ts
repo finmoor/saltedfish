@@ -51,7 +51,7 @@ test('访问权限页：同名浏览器的授权范围带短 ID，离线标注�
   const scope = (label: string) => app.$$('#clients .client-row').find(row => row.textContent.includes(label))!.querySelector('small')!.textContent;
   assert.equal(scope('只授权离线的那个'), `工作 · ${second.id.slice(0, 8)}（未连接）`);
   assert.equal(scope('授权了已不存在的 ID'), ghost);
-  assert.equal(scope('所有账号客户端'), '所有已配对账号');
+  assert.equal(scope('所有账号客户端'), '全部浏览器（含以后新增）');
   assert.equal(scope('两个同名'), `工作 · ${first.id.slice(0, 8)}、工作 · ${second.id.slice(0, 8)}（未连接）`);
 });
 
@@ -97,6 +97,30 @@ test('在末页核查完最后一条后回到最后一个有效页，不误报�
   assert.doesNotMatch(app.text('#operations'), /没有待核查操作/);
   assert.match(app.text('#activity-page'), /30 条 · 第 1 页/); assert.equal(app.$$('#operations tbody tr').length, 30);
   assert.equal(app.$('#activity-prev').disabled, true); assert.equal(app.$('#activity-next').disabled, true);
+});
+
+test('操作记录给标签号配上它现在的标题和网址，核查对话框里也有；标签页没了就直说，读不到标签页不影响列表', async t => {
+  const a = online(1, '个人'), ops = [...unknownOps(a.id, 1), { ...unknownOps(a.id, 2)[1]!, tabId: 9 }], server = createServer({ profiles: [a] });
+  server.rpc.chrome_operations = operationsRpc(ops);
+  server.rpc.chrome_tabs = () => ({ items: [{ tabId: 7, title: '订单详情', url: 'https://shop.example.com/orders/1' }] });
+  const app = await mountApp(t, { server }); await app.navigate('activity'); await selectProfile(app, '#activity-profile', a.id); await app.flush();
+  const targets = app.$$('#operations .operation-target').map(node => node.textContent);
+  assert.match(targets[0]!, /标签 7现在是：订单详情 · https:\/\/shop\.example\.com\/orders\/1/);
+  assert.match(targets[1]!, /标签 9现在没有这个标签页/);
+  app.click('#operations [data-recover]'); await app.flush();
+  assert.match(app.text('#operation-recovery-context'), /标签 7（现在是：订单详情/);
+  app.click('#cancel-operation-recovery'); await app.flush();
+  server.rpc.chrome_tabs = () => { throw new Error('标签页读取超时'); };
+  app.click('#load-activity'); await app.flush();
+  assert.equal(app.$$('#operations tbody tr').length, 2, '读不到标签页时照常列出记录');
+  assert.doesNotMatch(app.text('#operations'), /现在是|读取超时/);
+});
+
+test('离线浏览器的操作记录不去读标签页', async t => {
+  const a = { ...online(1, '个人'), online: false }, server = createServer({ profiles: [a] });
+  server.rpc.chrome_operations = operationsRpc(unknownOps(a.id, 1));
+  const app = await mountApp(t, { server }); await app.navigate('activity'); await selectProfile(app, '#activity-profile', a.id); await app.flush();
+  assert.equal(app.$$('#operations tbody tr').length, 1); assert.equal(server.rpcCalls('chrome_tabs').length, 0);
 });
 
 test('逐条核查成功后列表重画：焦点落到仍存在的下一条核查按钮，没有下一条时落到账号选择框', async t => {

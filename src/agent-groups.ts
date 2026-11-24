@@ -101,7 +101,7 @@ export class AgentGroups {
   /** 别的会话组里的标签页不能抢。那个会话已经结束、组还没解散的不算。 */
   async assertClaimable(principal: Principal, owner: string, profileId: string, tabId: number) {
     const state = await this.tabState(principal, owner, profileId, tabId);
-    if (state?.holder && this.presence.liveOwners().has(state.holder)) throw new BrowserError('TAB_CLAIMED', '这个标签页在另一个会话的标签组里。请使用另一标签页，或等那个会话结束。', NOT_DISPATCHED);
+    if (state?.holder && this.presence.liveOwners().has(state.holder)) throw new BrowserError('TAB_CLAIMED', '这个标签页在另一个会话的标签组里，未接管。不要抢；用 chrome_new_tab 开新标签页，或等那个会话结束后再 chrome_claim_tab。', NOT_DISPATCHED);
   }
   async leave(principal: Principal, owner: string, profileId: string, tabId: number) { await this.forSession(principal, owner, profileId, 'group.leave', { tabId, owner }); }
   private async dissolve(owner: string) {

@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { fixture, fakeProfile } from './helpers.js';
 
-// 永不再连接的配置（重建了配置 ID、卸载重装扩展、删除了 Chrome 配置）上的 unknown 不能把管理页永远卡在“有操作需要先核查”：
+// 永不再连接的配置（删除了 Chrome 配置）上的 unknown 不能把管理页永远卡在“有操作需要先核查”：
 // 管理员可以明确声明放弃——先预览、再带着看到的数量二次确认，只改数据库，不碰浏览器。
 // 常规保护不变：配置只是暂时离线时，chrome_recover_operation 仍要求先回到原配置核查页面。
 type Fixture = Awaited<ReturnType<typeof fixture>>;

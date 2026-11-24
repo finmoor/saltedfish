@@ -109,7 +109,7 @@ export class BrowserService {
     }) };
   }
 
-  // 永远不会再连接的配置（重建了配置 ID、卸载重装扩展、删除了 Chrome 配置）上的 unknown 无法按常规流程解除：确认需要回到原配置核查页面，而它已经不存在。
+  // 永远不会再连接的配置（删除了 Chrome 配置；重装扩展、换文件夹可以“重新连接”接回，不算）上的 unknown 无法按常规流程解除：确认需要回到原配置核查页面，而它已经不存在。
   // 出路是管理员明确声明放弃：先预览要放弃的记录，再带着看到的数量确认。常规的离线保护（chrome_recover_operation 要求配置在线）保持不变。
   abandonPreview(profileId: string) {
     const online = this.isOnline(profileId), known = this.state.knownProfiles().find(profile => profile.id === profileId), pending = this.state.pendingOperations(profileId);
@@ -185,11 +185,11 @@ export class BrowserService {
       if (!tool) throw new BrowserError('UNKNOWN_TOOL', name);
       const args = tool.schema.parse(input) as JsonObject;
       if (principal.readOnly && !tool.readOnly) throw new BrowserError('CLIENT_READ_ONLY', '此客户端只获准读取；需要由本机用户调整授权。');
-      if (typeof args.profileId === 'string' && !allowsProfile(principal, args.profileId)) throw new BrowserError('PROFILE_NOT_AUTHORIZED', '此客户端没有该账号配置的授权。');
-      if (typeof args.toProfileId === 'string' && !allowsProfile(principal, args.toProfileId)) throw new BrowserError('PROFILE_NOT_AUTHORIZED', '此客户端没有目标账号的授权，未复制流程。');
+      if (typeof args.profileId === 'string' && !allowsProfile(principal, args.profileId)) throw new BrowserError('PROFILE_NOT_AUTHORIZED', '这个客户端没有获准使用这个浏览器，未执行。用 chrome_profiles 看能用哪些；要用它，请用户在 SaltedFish 管理页“访问权限”授权。');
+      if (typeof args.toProfileId === 'string' && !allowsProfile(principal, args.toProfileId)) throw new BrowserError('PROFILE_NOT_AUTHORIZED', '这个客户端没有获准使用目标浏览器，未复制流程；要用它，请用户在 SaltedFish 管理页“访问权限”授权。');
       if (name === 'chrome_recover_operation') {
         const record = this.state.get(String(args.operationId));
-        if (record && !allowsProfile(principal, record.profileId)) throw new BrowserError('PROFILE_NOT_AUTHORIZED', '不能访问其他账号的操作记录。');
+        if (record && !allowsProfile(principal, record.profileId)) throw new BrowserError('PROFILE_NOT_AUTHORIZED', '这条操作记录属于你没获准使用的浏览器，不能查看或解除。');
       }
       if (name === 'chrome_read_result' && !principal.admin) {
         const artifact = this.state.artifact(String(args.artifactId));
@@ -307,7 +307,7 @@ export class BrowserService {
       return waitForResponse({...source,assertAllowed:allowed},profileId,tabId,args as unknown as ResponseWaitArgs,waitDeadline);
     }
     if (name === 'chrome_profiles') {
-      return { profiles: this.listProfiles(principal), note: '名称是用户别名，并非网站账号验证。online=false 时不执行或切换账号，等待原配置重新连接；offline 说明离线原因和恢复办法；extensionReload 说明扩展后台还在跑旧代码，新功能用不了，转告用户按它说的重新加载。' };
+      return { profiles: this.listProfiles(principal), note: '只列出授权给你这个客户端的浏览器；用户说的那个不在列表里，就请用户在 SaltedFish 管理页“访问权限”给你授权，或在“浏览器”里先配对那个 Chrome。名称是用户别名，并非网站账号验证。online=false 时不执行或切换账号，等待原配置重新连接；offline 说明离线原因和恢复办法；extensionReload 说明扩展后台还在跑旧代码，新功能用不了，转告用户按它说的重新加载。' };
     }
     if (name === 'chrome_operations') return this.state.list(profileId, args.state as string | undefined, Number(args.offset), Number(args.limit), args.acknowledged as boolean | undefined);
     if (name === 'chrome_task_submit') { const { profileId: _, tabId: __,submissionId,...plan } = args; return this.state.asSubmitter(principal, () => this.tasks.submit(profileId, tabId, plan, principal,undefined,submissionId as string|undefined)); }
@@ -337,7 +337,7 @@ export class BrowserService {
       const record = this.state.get(String(args.operationId));
       if (!record) throw new BrowserError('OPERATION_NOT_FOUND', '操作记录不存在。');
       // 配置只是暂时离线时必须回到原 Chrome 配置核查页面，这条保护是有意的；配置已经永久消失的出路是 abandonProfile（管理员二次确认，只改数据库）。
-      const offline = (error: unknown): never => { throw errorInfo(error).code === 'PROFILE_OFFLINE' ? new BrowserError('PROFILE_OFFLINE', `配置 ${record.profileId} 未连接，无法在原页面核查这条记录。如果只是暂时离线，请打开该 Chrome 配置继续连接后再确认；如果这个配置已经不存在（重建了配置 ID、卸载重装扩展或删除了 Chrome 配置），本机管理员可以在二次确认后放弃它的待核查记录（管理接口 POST /profiles/abandon，先 GET 同一路径预览）。`, NOT_DISPATCHED) : error; };
+      const offline = (error: unknown): never => { throw errorInfo(error).code === 'PROFILE_OFFLINE' ? new BrowserError('PROFILE_OFFLINE', `配置 ${record.profileId} 未连接，无法在原页面核查这条记录。如果只是暂时离线，请打开该 Chrome 配置继续连接后再确认；扩展重装过或换了文件夹的，请用户在管理页“浏览器”里原卡片点“重新连接”接回后再核查；只有这个 Chrome 配置已经不存在（删掉了），本机管理员才可以在二次确认后放弃它的待核查记录（管理接口 POST /profiles/abandon，先 GET 同一路径预览）。`, NOT_DISPATCHED) : error; };
       if (record.tabId !== null) { await broker.command(record.profileId, 'tab.recover', { tabId: record.tabId }).catch(offline); broker.recover(record.profileId, record.tabId, owner, takeOverRemote); }
       else { try { broker.capture(record.profileId); } catch (error) { offline(error); } }
       this.state.acknowledge(record.id);

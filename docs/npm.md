@@ -34,8 +34,10 @@ saltedfish connect --clients codex,opencode --trust-browser
 
 1. 运行 `saltedfish dashboard`，打开管理页。
 2. 在“浏览器”页输入名称，为每个 Chrome 配置分别生成配对码。是否允许该浏览器直接打开已登录管理页，单独选择。
-3. 在对应 Chrome 配置打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”。服务与 Chrome 同机时，选择安装命令输出的扩展目录；不在同机时，从管理页下载扩展，或从 GitHub Releases 下载同版本的 `saltedfish-extension-<版本>.zip`，解压到固定目录。Releases 里的 ZIP 不带服务地址，粘贴配对码时一并填上。
-4. 打开 SaltedFish 扩展，粘贴配对码并连接。回到管理页确认该浏览器在线。
+3. 在对应 Chrome 配置打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，按 Chrome 在哪台电脑选文件夹：
+   - Chrome 和服务在同一台电脑上：选安装命令输出的扩展目录。服务升级时它跟着更新，Windows 上从扩展“打开管理页”也能直接进。
+   - Chrome 在别的电脑上：在管理页“浏览器”里下载扩展 ZIP（带着这个服务的地址），或从 GitHub Releases 下载同版本的 `saltedfish-extension-<版本>.zip`。解压到以后不会挪动的文件夹再选它。
+4. 打开 SaltedFish 扩展，粘贴配对码，点“连接”。配对码里带着服务地址，不用另填，Releases 的 ZIP 也一样。回到管理页确认该浏览器在线。
 5. 接入 Agent，重载客户端的 MCP 连接，再明确选择浏览器和标签页开始操作。
 
 配对码不是管理页登录码。浏览器配对与 Agent 授权分别管理；配对本身不会授予 Agent 访问权限。不要把扩展目录、客户端配置或配对码当作公开资料分享。
@@ -45,6 +47,37 @@ saltedfish connect --clients codex,opencode --trust-browser
 需要导出 Chrome 下载文件时，可在 Chrome 所在的 Windows 电脑安装可选文件助手：`saltedfish helper install --extension-dir DIR`，其中 `DIR` 是实际加载的扩展目录。助手只在明确请求时读取对应下载文件，安装助手不启动浏览器服务。
 
 Windows 上扩展设置页的“打开管理页”只认安装命令输出的扩展目录。同一台电脑上改用其他目录（比如 Releases 的 ZIP 解压出来的）时，它会先进登录页；运行 `saltedfish desktop register --extension-dir DIR` 登记这个目录后可以直接进入。
+
+## 去掉“正在调试此浏览器”提示条
+
+Agent 连上后，Chrome 在每个标签页的地址栏下方加一条“……正在调试此浏览器”的提示条，网页区域少大约 56 像素，断开调试后也不会马上消失。这是 Chrome 自己加的，扩展去不掉。
+
+Chrome 启动时带上 `--silent-debugger-extension-api` 就不会出现。Windows 上：
+
+1. 在打开 Chrome 用的快捷方式上右键 → 属性，在“目标”最后加一个空格和 `--silent-debugger-extension-api`。任务栏上的先右键 Chrome 图标，再右键菜单里的“Google Chrome”。开始菜单和公共桌面上的快捷方式要管理员权限才能改。
+2. 完全退出 Chrome：关掉所有 Chrome 窗口（几个 Chrome 配置共用一个进程，都要关），托盘里有 Chrome 图标的也右键退出。
+3. 从改好的快捷方式重新打开 Chrome。
+
+Linux 上把参数加到启动 Chrome 的命令或 `.desktop` 文件的 `Exec` 行里，同样要完全退出再重开。
+
+代价：
+
+- 这条提示是 Chrome 的安全提醒。带上参数以后，**任何**使用调试接口的扩展连上来都不会提示，只装你信得过的扩展。
+- 提示条上的“取消”也没了。要暂停 Agent，用扩展里的“暂停所有 Agent”或管理页。
+- Chrome 没开着时，从别的软件里点链接打开的 Chrome 不带这个参数，提示条又会出现。
+- 想恢复提示，删掉参数，完全退出再重开 Chrome。
+
+## 浏览器连不上时
+
+先看管理页“浏览器”里那张卡片的状态，再到对应的电脑上处理：
+
+| 卡片上 | 到哪台电脑 | 做什么 |
+| --- | --- | --- |
+| 已暂停 | Chrome 所在电脑 | 打开那个 Chrome 的 SaltedFish 扩展，点“继续连接” |
+| 未连接 | Chrome 所在电脑 | 打开那个 Chrome 配置，扩展会自动连上。还连不上，看扩展里“连接的服务”的地址，在这台电脑的浏览器里打开 `<地址>/health`：打不开就是网络或服务的问题，到下一行 |
+| 未连接，`/health` 打不开 | 服务所在电脑 | `saltedfish status` 看服务在不在运行、监听哪个地址；`saltedfish logs --lines 100` 看报错。改过监听地址的，到扩展的“连接设置”里填新的服务地址，配对码留空 |
+| 扩展重装过或换了文件夹 | 两台都要 | 在管理页原卡片点“重新连接”，到 Chrome 里粘贴新配对码，原身份、名称、授权和记录都接回来 |
+| 在线，但 Agent 说找不到这个浏览器 | 服务所在电脑 | 管理页“访问权限”里看这个客户端获准使用哪些浏览器；`saltedfish doctor` 检查安装和连接 |
 
 ## Linux 服务器部署
 
@@ -117,7 +150,7 @@ Windows 的默认 stdio 接入会在打开 Agent 时按需启动服务，不需�
 | `saltedfish diagnostics` | 导出诊断文件；分享前检查路径和名称 |
 | `saltedfish extension` | 输出扩展目录 |
 | `saltedfish dashboard` | 打开管理页 |
-| `saltedfish dashboard --onboarding` | 进入客户端接入页 |
+| `saltedfish dashboard --onboarding` | 安装后首次打开用：登录后从概览开始引导；自动接入客户端在管理页“高级管理 → 主机辅助配置” |
 | `saltedfish dashboard --logout-all` | 注销全部管理页会话，不打开页面 |
 | `saltedfish connect --preview` | 预览客户端接入计划 |
 | `saltedfish version` | 查看命令行包版本 |
@@ -151,7 +184,9 @@ saltedfish connect --refresh
 
 ### 扩展更新
 
-手动加载的扩展不会由 Chrome 自动更新。服务提供新版后，扩展图标显示 `NEW`。打开设置页点“更新”，首次选择 Chrome 实际加载的扩展文件夹，并允许编辑。扩展从已配对服务下载、校验文件后写入并重载，配对保留。Agent 正在操作时不能更新。
+手动加载的扩展不会由 Chrome 自动更新。服务提供新版后，扩展图标显示 `NEW`。点图标，再点“去设置页更新”，在打开的设置页里点“更新”；首次选择 Chrome 实际加载的扩展文件夹，并允许编辑。扩展从已配对服务下载、校验文件后写入并重载，配对保留。Agent 正在操作时不能更新。
+
+从管理页或 Releases 下载 ZIP 装的扩展也这样更新。不要把新版 ZIP 解压到另一个文件夹重新加载：换了文件夹，Chrome 会当成另一个扩展，配对和设置都不在了，得到管理页原卡片点“重新连接”接回。
 
 多个 Chrome 配置共用文件夹时，一个配置更新文件后，其他配置可能只需重新加载。管理页提示“扩展需要重新加载”时，即使显示版本已是新的，也应在 Chrome 扩展页重新加载。
 
@@ -204,4 +239,13 @@ saltedfish stop
 npm uninstall -g saltedfish
 ```
 
-卸载 npm 包不会自动移除 Chrome 扩展、客户端配置、数据和运行快照。确认不再需要后再手动清理对应目录；不要删除仍被其他安装或 Chrome 使用的文件夹。
+卸载 npm 包不会自动移除 Chrome 扩展、客户端配置、数据和运行快照。
+
+从每个 Chrome 配置移除扩展：打开 `chrome://extensions`，在 SaltedFish 上点“移除”。每个配置各装一份，要分别移除；别的电脑上的 Chrome 也一样。手动解压的扩展文件夹随后可以删掉。
+
+数据按你的打算二选一：
+
+- **以后还要用**：保留安装数据根目录（见[数据目录与独立安装](#数据目录与独立安装)）。重新安装 npm 包并运行 `saltedfish install` 后，接着用原来的配对、授权和记录。
+- **永久清理**：确认服务已停止、没有别的安装用同一个根目录，再删除安装数据根目录。里面有配对、客户端授权、操作记录、结果文件和随服务安装的扩展目录，删了不能恢复；还有 Chrome 加载着那个扩展目录的，先在 Chrome 里移除扩展。
+
+不要删除仍被其他安装或 Chrome 使用的文件夹。

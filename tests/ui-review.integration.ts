@@ -195,8 +195,10 @@ test('在线旧扩展显示刷新指引，能力更新恢复同一账号；离�
   await h.page.click('#refresh-all');
   await h.page.waitForFunction(() => document.querySelector('#overview-title')!.textContent!.includes('扩展需要更新'));
   assert.equal(await h.page.$eval('#copy-example', e => (e as HTMLButtonElement).disabled), true);
-  assert.ok(await h.page.$eval('#overview-browsers', e => e.textContent!.includes('chrome://extensions') && e.textContent!.includes('下载新的扩展包')));
-  await h.nav('accounts'); assert.ok(await h.page.$eval('#profiles', e => e.textContent!.includes('扩展需要更新') && e.textContent!.includes('配对都会保留')));
+  // 有一键更新的扩展照常点“更新”；更早的扩展才叫人刷新或覆盖文件夹
+  const selfUpdate = !!info.capabilities?.includes('self-update-v1'), hint = selfUpdate ? '去设置页更新' : '下载新的扩展包';
+  assert.ok(await h.page.$eval('#overview-browsers', (e, hint) => e.textContent!.includes(hint), hint));
+  await h.nav('accounts'); assert.ok(await h.page.$eval('#profiles', (e, hint) => e.textContent!.includes('扩展需要更新') && e.textContent!.includes(hint), hint));
 
   // An older server does not advertise a requirement. Keep that protocol compatible.
   let oldServer = true;

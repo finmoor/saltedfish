@@ -71,8 +71,8 @@ export function initializeActivity({ call, request, el, button, run, status, get
   function offlineExplanation(profile, offer) {
     const seen = lastSeenText(profile, getCheckedAt(), true);
     return offer
-      ? `这个浏览器当前未连接，${seen}。解除保护要回到原页面核查，所以现在无法确认这些记录。如果这个配置已经不存在（重建了配置 ID、卸载重装了扩展，或删除了 Chrome 配置），可以放弃整个配置。`
-      : `这个浏览器当前未连接，${seen}。解除保护要回到原页面核查：请先打开原来的 Chrome 继续连接。超过 ${ABANDON_AFTER_HOURS} 小时没有出现，才可以放弃这个配置。`;
+      ? `这个浏览器当前未连接，${seen}。解除保护要回到原页面核查，所以现在无法确认这些记录。扩展重装过或换了文件夹的，到“浏览器”里原卡片点“重新连接”接回，再在原页面核查。只有这个 Chrome 配置已经不存在（删掉了，再也连不回来）时，才放弃整个配置。`
+      : `这个浏览器当前未连接，${seen}。解除保护要回到原页面核查：请先打开原来的 Chrome 继续连接；扩展重装过或换了文件夹的，到“浏览器”里原卡片点“重新连接”接回，再在原页面核查。超过 ${ABANDON_AFTER_HOURS} 小时没有出现，才可以放弃这个配置。`;
   }
   /** @param {import('./contracts.js').ProfileState} profile */
   function offlineBanner(profile) {
@@ -82,8 +82,29 @@ export function initializeActivity({ call, request, el, button, run, status, get
     return banner;
   }
 
+  // 操作记录只存了标签号。浏览器在线时，列表先画出来，再补上这个标签号现在对应的页面，方便人工找到它核查。
+  // Chrome 重启后标签号会重新分配，所以写“现在是”，不说成当时操作的页面；读不到就只留标签号。
+  /** @type {Map<number, string>} */
+  let tabNotes = new Map();
+  /** @param {import('./contracts.js').ActivitySelection} selection @param {number} revision @param {[HTMLElement, number][]} targets */
+  async function describeTabs(selection, revision, targets) {
+    if (!targets.length) return;
+    /** @type {import('./contracts.js').TabSummary[]} */
+    let tabs;
+    try { tabs = (await call('chrome_tabs', { profileId: selection.profileId, limit: 1000 })).items; } catch { return; }
+    if (!isCurrent(revision, selection) || !Array.isArray(tabs)) return;
+    const notes = new Map();
+    for (const [target, tabId] of targets) {
+      const tab = tabs.find(item => item.tabId === tabId);
+      const note = tab ? `现在是：${tab.title || '(无标题)'}${tab.url ? ` · ${tab.url}` : ''}` : '现在没有这个标签页（关掉了，或者 Chrome 重启过）';
+      notes.set(tabId, note); target.append(el('div', note, 'url'));
+    }
+    tabNotes = notes;
+  }
+
   async function load() {
     const selection = scope();
+    tabNotes = new Map();
     invalidate(selection.profileId ? '正在读取操作记录…' : '选择浏览器后查看操作记录。');
     const revision = generation;
     if (!selection.profileId) return;
@@ -104,10 +125,14 @@ export function initializeActivity({ call, request, el, button, run, status, get
       const table = el('table'), head = el('thead'), header = el('tr'), body = el('tbody');
       for (const label of ['状态', '操作与目标', '处理']) header.append(el('th', label));
       head.append(header); table.append(head, body);
+      /** @type {[HTMLElement, number][]} */
+      const targets = [];
       for (const item of data.items) {
         const row = el('tr'), description = el('td'), actions = el('td');
         row.dataset.operationId = item.id;
-        description.append(el('div', item.tool), el('div', item.tabId === null ? '整个浏览器' : `标签 ${item.tabId}`, 'operation-target'), el('small', new Date(item.startedAt).toLocaleString()), el('code', item.id, 'operation-id'));
+        const target = el('div', item.tabId === null ? '整个浏览器' : `标签 ${item.tabId}`, 'operation-target');
+        if (typeof item.tabId === 'number') targets.push([target, item.tabId]);
+        description.append(el('div', item.tool), target, el('small', new Date(item.startedAt).toLocaleString()), el('code', item.id, 'operation-id'));
         if (item.errorCode) description.append(el('div', item.errorCode, 'url'));
         if (item.state === 'unknown' && !item.acknowledgedAt) {
           const control = button('核查并解除保护', () => openRecovery(item, selection, revision));
@@ -119,6 +144,7 @@ export function initializeActivity({ call, request, el, button, run, status, get
       const profile = getProfiles().find(value => value.id === selection.profileId);
       if (profile?.online === false && data.items.some(item => item.state === 'unknown' && !item.acknowledgedAt)) root.append(offlineBanner(profile));
       root.append(table);
+      if (profile?.online) void describeTabs(selection, revision, targets);
     } catch (error) {
       if (!isCurrent(revision, selection)) return;
       // 失败页之后没有可信的“下一页”，但仍可回到上一页，或用“刷新记录”重试同一页。
@@ -133,7 +159,8 @@ export function initializeActivity({ call, request, el, button, run, status, get
     const profile = getProfiles().find(value => value.id === selection.profileId);
     recovery = { item, selection, revision };
     returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-    context.textContent = `${profile ? profileLabel(profile, getProfiles()) : selection.profileId} · ${item.tabId === null ? '整个浏览器' : `标签 ${item.tabId}`}\n${item.tool}\n操作 ID：${item.id}`;
+    const tabNote = typeof item.tabId === 'number' ? tabNotes.get(item.tabId) : undefined;
+    context.textContent = `${profile ? profileLabel(profile, getProfiles()) : selection.profileId} · ${item.tabId === null ? '整个浏览器' : `标签 ${item.tabId}`}${tabNote ? `（${tabNote}）` : ''}\n${item.tool}\n操作 ID：${item.id}`;
     // 配置当前离线时服务端会拒绝解除：提前说明原因，并在它长期不会再出现时给出放弃整个配置的出口（在线配置不显示任何提示）。
     const offline = profile?.online === false ? profile : undefined, offer = !!offline && canOfferAbandon(offline, getCheckedAt());
     offlineHint.hidden = !offline; abandonFromRecovery.hidden = !offer;
@@ -169,7 +196,7 @@ export function initializeActivity({ call, request, el, button, run, status, get
   }
 
   // ───────── 放弃永远不会再连接的配置 ─────────
-  // 重建了配置 ID、卸载重装扩展、删除了 Chrome 配置之后，旧配置上的未知结果再也没法回到原页面核查。
+  // 删除了 Chrome 配置之后，旧配置上的未知结果再也没法回到原页面核查。重装扩展、换文件夹不算：“重新连接”能接回原身份。
   // 这里只做数据库层面的确认（服务端 POST /profiles/abandon）：先读预览、列出受影响的记录，输入记录总数二次确认后才提交；不连接浏览器，不重放任何操作。
   /** @param {HTMLElement | undefined} node */
   const usable = node => !!node && node.isConnected && !('disabled' in node && node.disabled);

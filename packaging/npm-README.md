@@ -16,7 +16,12 @@ saltedfish dashboard
 
 `install` 启动服务、接入检测到的本机 Agent（`--no-connect` 跳过，之后随时可以 `saltedfish connect`）。Linux 服务器要开机自动启动，安装时选上，或之后运行 `saltedfish autostart on`。
 
-在管理页的“浏览器”里给每个 Chrome 配置生成配对码，下载扩展 ZIP（也可以从 GitHub Releases 下载 `saltedfish-extension-{{version}}.zip`）并解压，在 `chrome://extensions` 开启开发者模式、“加载已解压的扩展程序”选这个目录，再把配对码粘贴到扩展设置里。每个 Chrome 配置单独配对，名称、网站登录和浏览器身份由 Chrome 自己保存。
+在管理页的“浏览器”里给每个 Chrome 配置生成配对码。然后在 `chrome://extensions` 开启开发者模式、点“加载已解压的扩展程序”，按 Chrome 在哪台电脑选文件夹：
+
+- Chrome 和服务在同一台电脑上：选 `install` 打印的扩展目录，服务升级时它跟着更新。
+- Chrome 在别的电脑上：在管理页下载扩展 ZIP（带着服务地址），或者从 GitHub Releases 下载 `saltedfish-extension-{{version}}.zip`，解压到以后不会挪动的文件夹再选它。
+
+最后把配对码粘贴到扩展里点“连接”，配对码里带着服务地址，不用另填。每个 Chrome 配置单独配对，名称、网站登录和浏览器身份由 Chrome 自己保存。
 
 在“Agent 连接”里给 Agent 新建授权，选允许它用哪些浏览器。`/mcp` 只接受服务所在电脑上的连接；别的电脑上的 Agent 要在那台电脑上另装服务。Claude Desktop 用自带的 stdio→HTTP 桥接，其余客户端用 HTTP 直连。各客户端的配置位置和审批见 [支持的 Agent](docs/supported-clients.md) 和 [各客户端的配置细节](docs/client-compatibility.md)。
 
@@ -70,7 +75,7 @@ saltedfish helper status
 
 `saltedfish upgrade` 下载最新版并切换运行版本，失败回退（离线装好 TGZ 后用 `upgrade --no-fetch`）；`rollback` 只切到兼容当前数据格式的版本，不会用旧数据库绕过已撤销的授权。`--home` 指定安装位置，Windows 默认在 `%LOCALAPPDATA%/SaltedFish/npm`。
 
-`upgrade` 只换服务，扩展要单独更新：在扩展设置页点“更新”，第一次选扩展所在的文件夹。不要删除扩展，配对和浏览器数据都保留。
+`upgrade` 只换服务，扩展要单独更新：点扩展图标，再点“去设置页更新”，在设置页里点“更新”，第一次选扩展所在的文件夹。配对和浏览器数据都保留。不要删除扩展，也不要把新版 ZIP 解压到另一个文件夹重新加载：换了文件夹就丢了配对，得在管理页原卡片点“重新连接”。
 
 ## 文档
 

@@ -43,7 +43,7 @@ const help=`SaltedFish ${VERSION}
                                  --refresh 只更新已登记连接的目录版本，保留原授权与信任
   dashboard [--onboarding | --logout-all]
                                  打开管理页（非 Windows 或设置 SALTEDFISH_NO_BROWSER=1 时只打印一次性登录地址）
-                                 --onboarding 直达接入页；--logout-all 注销全部管理页登录，不打开页面
+                                 --onboarding 安装后首次打开用，登录后从概览开始引导；--logout-all 注销全部管理页登录，不打开页面
   desktop register [--extension-dir DIR] | unregister
                                  注册或移除本安装的 Windows 设置入口；--extension-dir 可重复指定受信的原扩展目录，不启动服务
   desktop-open SETTINGS_URI       供已注册的桌面入口打开受限设置地址
@@ -54,7 +54,7 @@ const help=`SaltedFish ${VERSION}
   clients list | add NAME [--profiles UUID,UUID] [--read-only] | revoke ID
   results list | remove ARTIFACT_ID
   mcp | doctor | diagnostics | version | --version
-  mcp-bridge                     stdio 连接远端；环境变量 SALTEDFISH_MCP_URL、SALTEDFISH_MCP_TOKEN，无需 install
+  mcp-bridge                     把 stdio 转发到同一台电脑上的 SaltedFish 服务；环境变量 SALTEDFISH_MCP_URL、SALTEDFISH_MCP_TOKEN，无需 install
   extension                      输出本机已配对的扩展目录
 旧安装兼容命令（新服务使用上面的 install / start / serve）：
   gateway init [--host HOST --port PORT --local-port PORT --cert PEM --key PEM --url URL]
@@ -156,10 +156,13 @@ async function main(){
     console.log(terminal?`SaltedFish ${VERSION} ${noStart?'已安装，服务未启动':'已启动'}\nChrome 扩展目录：${extensionDir}`:JSON.stringify({product:'SaltedFish',version:VERSION,home,extensionDir,state:noStart?'stopped':'running',entry:path.join(home,'launcher.mjs'),...(network.serviceUrl?{serviceUrl:network.serviceUrl}:{})}));
     if(network.note)console.error(network.note);
     if(network.serviceUrl)console.log(`服务地址：${network.serviceUrl}（内网 HTTP，未加密，只在可信内网使用）`);
+    // 监听内网时 Chrome 多半在别的电脑上，上面那个目录对它没用。
+    if(network.serviceUrl&&terminal)console.log('Chrome 在别的电脑上时不用这个目录：在管理页“浏览器”里下载扩展 ZIP，或者从 GitHub Releases 下载，解压后加载。');
     const connecting=!noStart&&!noConnect&&connectWanted(args);
     if(connecting)await runCore(home,'local',['connect',...args]);else noArgs(args);
     if(!noStart&&await autostartState()==='off'&&(autostart||terminal&&await askAutostart())){const warning=await enableAutostart(home);if(warning)console.error(warning);}
-    if(!connecting||terminal)console.log(`${terminal?'\n':''}运行 saltedfish dashboard，在管理页配对浏览器并生成 Agent 的 HTTP 配置。`);return;
+    // connect 的结果（接入、取消、没检测到）它自己打印过了，这里只给接下来要做的，不重复说接入。
+    if(!connecting||terminal)console.log(`${terminal?'\n':''}${connecting?'下一步：运行 saltedfish dashboard，在管理页配对浏览器。上面接入了的 Agent 新开会话就能用；没接入或取消了的，之后运行 saltedfish connect。':'下一步：运行 saltedfish dashboard，在管理页配对浏览器；要接入这台电脑上的 Agent，运行 saltedfish connect，或在管理页“Agent 连接”里生成配置。'}`);return;
   }
   if(command==='init'&&role==='gateway'){
     const noStart=flag(args,'--no-start');

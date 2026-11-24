@@ -59,6 +59,8 @@ test('终端里只说接入谁和信任的含义，特别情况单独列出', ()
   assert.match(summary, /保留已有的逐工具例外规则/); assert.match(summary, /saltedfish connect --preview/);
   assert.ok(summary.split('\n').length <= 4);
   assert.doesNotMatch(connectSummary([{ client: 'claude', trust: 'preserve' }]), /信任/);
+  assert.match(connectSummary([{ client: 'claude-desktop', trust: 'service' }]), /先完全退出.*再确认/, 'Desktop 开着会盖掉配置，写入前就要说');
+  assert.doesNotMatch(connectSummary([{ client: 'claude-desktop', trust: 'service', unchanged: true }, { client: 'codex', trust: 'service' }]), /Claude Desktop/);
   assert.match(connectSummary([{ client: 'codex', trust: 'prompt' }]), /Codex 恢复逐次确认/);
   assert.match(connectSummary([{ client: 'codex', trust: 'service', unchanged: true }, { client: 'claude', trust: 'preserve' }]), /^将接入 Claude Code，/);
 });

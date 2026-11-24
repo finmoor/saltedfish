@@ -199,7 +199,8 @@ export class ClientSetup {
         if (!this.options.home) for (const folder of (process.env.PATH || '').split(path.delimiter).filter(Boolean)) for (const suffix of ['.exe','.cmd','']) candidates.push(path.join(folder, client + suffix));
         const cliPaths = [...new Set((await Promise.all(candidates.map(async file => await exists(file) ? path.resolve(file) : undefined))).filter((value): value is string => !!value))];
         let state: Awaited<ReturnType<ClientSetup['inspect']>>;
-        try { state = await this.inspect(client); } catch (error) { state = { connection: 'invalid', format: 'v2', note: error instanceof BrowserError ? error.message : '暂时无法核对连接配置，请查看设置' }; }
+        // 核对不了时说清原因和下一步：服务自己的连接配置还没生成（预览接入会生成），或者读配置出错（已经能用的可以不管）。
+        try { state = await this.inspect(client); } catch (error) { state = { connection: 'invalid', format: 'v2', note: error instanceof BrowserError ? error.message : (error as NodeJS.ErrnoException)?.code === 'ENOENT' ? '这台服务还没生成这个客户端的连接配置，没法和现有配置比对。点“预览接入”会生成，并列出要改什么。' : `没能核对这个客户端的配置（${String((error as Error)?.message ?? error).slice(0, 120)}）。它已经能用 SaltedFish 的话可以不管；要重新接入，点“预览接入”。` }; }
         return { client, label: clientLabels[client], ...capabilities, target, configExists: await exists(target), cliDetected: cliPaths.length > 0, cliPaths, scope: clientUserOnly(client) ? '用户级配置；审批在客户端内管理' : '默认用户配置；项目设置可能覆盖它', ...state, error: undefined };
       } catch (error) { return { client, label: clientLabels[client], ...capabilities, error: error instanceof BrowserError ? error.message : '无法读取配置路径' }; }
     }));

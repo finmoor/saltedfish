@@ -43,7 +43,7 @@ saltedfish connect --clients codex,opencode --keep-approvals
 
 `--preview` 只显示计划，不写文件。交互执行可在预览后确认；非交互接入必须明确指定审批选项。`--keep-approvals` 保留现有审批，包括已存在的信任，不等于恢复逐次确认。
 
-也可运行 `saltedfish dashboard --onboarding`。选择客户端和配置位置，预览目标、权限和保留内容，再选择信任或保留审批。程序验证独立凭据与工具发现后，备份并合并配置。已打开的客户端需要重连；Desktop 接入前完全退出，接入后重启。
+也可在管理页接入：运行 `saltedfish dashboard`，打开“高级管理 → 主机辅助配置”。选择客户端和配置位置，预览目标、权限和保留内容，再选择信任或保留审批。程序验证独立凭据与工具发现后，备份并合并配置。已打开的客户端需要重连；Desktop 接入前完全退出，接入后重启。
 
 `--config FILE` 或 `--project DIR` 可选择明确的绝对路径，一次一个客户端。agy、Claude Desktop、WorkBuddy 不支持项目配置。首次项目启用和组织策略不由 SaltedFish 取消，不能保证所有环境只弹一次确认。
 

@@ -163,8 +163,9 @@ async function refreshUpdate(response:{service?:{extensionRelease?:{version:stri
   if(updateVersion!==release.version){updateVersion=release.version;updateFilesReady=await filesUpdated(release.version);}
   const busy=!!response.activities?.length,tab=await chrome.tabs.getCurrent();
   updateStrip.hidden=false;updateButton.hidden=false;updateTitle.textContent='有新版本 '+release.versionName;
-  updateDetail.textContent=busy?'Agent 正在操作，结束后再更新。':updateFilesReady?'文件已经是新版本，重新加载后生效。Agent 的连接会断开几秒，之后自动重连。':tab?'更新时 Agent 的连接会断开几秒，之后自动重连。第一次要选扩展所在的文件夹，Chrome 会问是否允许编辑，选允许。':'更新时 Agent 的连接会断开几秒，之后自动重连。';
-  updateButton.textContent=updateFilesReady?'重新加载':'更新';updateButton.disabled=updating||busy;updateFolder.hidden=!tab||updateFilesReady;
+  updateDetail.textContent=busy?'Agent 正在操作，结束后再更新。':updateFilesReady?'文件已经是新版本，重新加载后生效。Agent 的连接会断开几秒，之后自动重连。':tab?'更新时 Agent 的连接会断开几秒，之后自动重连。第一次要选扩展所在的文件夹，Chrome 会问是否允许编辑，选允许。':'会打开设置页，在那里点“更新”。第一次要选扩展所在的文件夹，Chrome 问是否允许编辑时选允许。更新时 Agent 的连接会断开几秒，之后自动重连。';
+  // 工具栏弹窗里走不完文件夹选择，按钮只负责打开设置页，名字照实写。
+  updateButton.textContent=updateFilesReady?'重新加载':tab?'更新':'去设置页更新';updateButton.disabled=updating||busy;updateFolder.hidden=!tab||updateFilesReady;
 }
 updateFolder.addEventListener('click',()=>void chrome.tabs.create({url:'chrome://extensions/?id='+chrome.runtime.id}));
 updateButton.addEventListener('click',()=>{
@@ -213,7 +214,7 @@ async function refresh(fill = false) {
   document.querySelector('#service-address')!.textContent=serviceUrl||'尚未设置服务';
   document.querySelector('#service-connection-state')!.textContent=(state==='connected'?'已连接':state==='paused'?'已暂停':state==='connecting'?'连接中':'未连接')+(serviceUrl?' · '+serviceTransportLabel(serviceUrl):'');
   if(fill||setupActive&&!unpaired)(form.elements.namedItem('serviceUrl') as HTMLInputElement).value=serviceUrl;
-  if(unpaired&&!setupActive){if(response.serviceKnown)setupAddress.value=serviceUrl;(setupAddress.value?setupCode:setupAddress).focus();}
+  if(unpaired&&!setupActive){if(response.serviceKnown)setupAddress.value=serviceUrl;setupCode.focus();}
   setupActive=unpaired;
 
   void refreshAgents(response);

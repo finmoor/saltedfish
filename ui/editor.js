@@ -90,7 +90,7 @@ export function createEditor({ el, status, profileId }) {
     let timer; row.addEventListener('input', () => { dirty = true; clearTimeout(timer); timer = setTimeout(renderParameters, 250); });
   }
   function plan() {
-    if (boundProfile && boundProfile !== profileId()) throw new Error('此草稿属于另一个账号，请切回原账号，或明确复制流程后再执行。');
+    if (boundProfile && boundProfile !== profileId()) throw new Error('此草稿属于另一个浏览器，请切回原浏览器，或明确复制流程后再执行。');
     const maxExecutedSteps=Number(executionLimit.value);
     if(!Number.isInteger(maxExecutedSteps)||maxExecutedSteps<1||maxExecutedSteps>10000)throw new Error('总步骤执行上限必须是 1 到 10000 的整数（包含循环与控制步骤）。');
     return { name: $('#task-name').value.trim(), steps: [...$('#task-steps').children].map(row => readStep(row)), visible: $('#task-visible').checked, captureOnFailure: $('#task-capture').checked, stepTimeoutMs: Math.round(Number($('#task-timeout').value) * 1000), maxExecutedSteps };
@@ -111,7 +111,7 @@ export function createEditor({ el, status, profileId }) {
   $('#task-form').addEventListener('input', () => { dirty = true; });
   $('#new-task').onclick = () => { if (load({ name: '', steps: [undefined], visible: true, captureOnFailure: true })) status.textContent = '已开始新的任务草稿。'; };
   return { addStep, plan, load, renderParameters, get editing() { return editing; },
-    definition() { if (editing && editing.profileId !== profileId()) throw new Error('此流程属于另一个账号，请先切回或明确复制到当前账号。'); return { ...plan(), description: $('#workflow-description').value, parameters: parameters() }; },
+    definition() { if (editing && editing.profileId !== profileId()) throw new Error('此流程属于另一个浏览器，请先切回，或明确复制到当前浏览器。'); return { ...plan(), description: $('#workflow-description').value, parameters: parameters() }; },
     saved(flow) { editing = flow; boundProfile = flow.profileId; dirty = false; $('#editing-flow').hidden = false; $('#editing-flow').textContent = `已保存版本 ${flow.version}`; $('#save-workflow').textContent = '保存新版本'; },
     markSubmitted() { dirty = false; },
   };

@@ -113,7 +113,7 @@ export class FileTransferManager {
   }
   private authorize(context: FileTransferContext, write = false) {
     context.assertActive?.();
-    if (!allowsProfile(context.principal, context.profileId)) fail('PROFILE_NOT_AUTHORIZED', '客户端没有该账号的文件传输授权。');
+    if (!allowsProfile(context.principal, context.profileId)) fail('PROFILE_NOT_AUTHORIZED', '这个客户端没有获准使用这个浏览器，未传输文件；要用它，请用户在 SaltedFish 管理页“访问权限”授权。');
     if (write && context.principal.readOnly) fail('CLIENT_READ_ONLY', '只读客户端不能创建或写入文件传输。');
   }
   private get(context: FileTransferContext, id: string, write = false) {

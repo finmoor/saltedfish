@@ -119,7 +119,7 @@ test('手动安装的扩展不知道服务地址：连不上时就地提示不�
  const origin=`http://127.0.0.1:${f.config.port}`,errors:string[]=[],extension=path.join(f.config.dataDir,'extension');await cp(path.join(product,'dist/extension'),extension,{recursive:true});
  const started=await launch(extension,f.config.dataDir);browser=started.browser;
  const options=await popup(browser,started.optionsUrl,errors);await mkdir(shots,{recursive:true});
- assert.equal(await options.$eval('#setup-address',e=>(e as HTMLInputElement).value),'','不把默认的本机地址当成用户的服务');assert.equal(await options.evaluate(()=>document.activeElement?.id),'setup-address');
+ assert.equal(await options.$eval('#setup-address',e=>(e as HTMLInputElement).value),'','不把默认的本机地址当成用户的服务');assert.equal(await options.evaluate(()=>document.activeElement?.id),'setup-code');
  await options.screenshot({path:path.join(shots,'popup-unknown-address.png')});
  await options.click('#setup-open');await options.waitForFunction(()=>document.querySelector('#setup-open-result')?.textContent?.includes('服务地址'));
  const pages=(await browser.pages()).length;await options.type('#setup-address','127.0.0.1:9');await options.click('#setup-open');await options.waitForFunction(()=>document.querySelector('#setup-open-result')?.textContent?.includes('连不上 http://127.0.0.1:9'),{timeout:8000});

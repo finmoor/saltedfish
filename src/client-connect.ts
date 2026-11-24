@@ -15,7 +15,10 @@ export function connectSummary(plans: ConnectPlan[]) {
   const lines = [`将接入 ${names(changing)}，写入前自动备份配置。`];
   if (trusted.length) lines.push(`信任后 ${names(trusted)} 调用浏览器工具不再逐次确认，可以用已登录的身份操作网站。`);
   if (restored.length) lines.push(`${names(restored)} 恢复逐次确认。`);
-  lines.push(...changing.flatMap(plan => plan.highlights ?? []), '完整说明：saltedfish connect --preview');
+  lines.push(...changing.flatMap(plan => plan.highlights ?? []));
+  // Desktop 开着时可能在退出时用它记着的旧配置盖掉刚写的，所以写入前就要说，不能等写完。
+  if (changing.some(plan => plan.client === 'claude-desktop')) lines.push('Claude Desktop 开着的话，先完全退出（托盘里也退出）再确认，不然它退出时可能用旧配置覆盖刚写入的。');
+  lines.push('完整说明：saltedfish connect --preview');
   return lines.join('\n');
 }
 export function connectResult(results: ConnectResult[]) {
@@ -64,19 +67,24 @@ export async function connectClients(setup: ClientSetup, args: string[], termina
   const modes = ['--trust-browser','--keep-approvals','--revoke-trust'].filter(mode => flags.has(mode));
   if (modes.length > 1) throw new BrowserError('INVALID_CONNECT_OPTIONS', '信任、保留审批和撤销信任只能选择一种。');
   const selection: SetupSelection = { trust: flags.has('--keep-approvals') ? 'preserve' : flags.has('--revoke-trust') ? 'prompt' : 'service', ...(values.has('--config') ? { configPath: values.get('--config')! } : {}), ...(values.has('--project') ? { projectDirectory: values.get('--project')! } : {}) };
-  const plans = await Promise.all(clients.map(client => setup.preview(client as SetupClient, selection)));
+  let plans = await Promise.all(clients.map(client => setup.preview(client as SetupClient, selection)));
   const pending = plans.some(plan => !plan.unchanged);
   if (!concise) console.log(JSON.stringify({ plans }, null, 2)); // 预览只有路径、范围和说明，不返回原文件或凭据。
   else if (pending) console.log(`\n${connectSummary(plans)}`);
   if (flags.has('--preview')) return;
   if (!modes.length) {
-    if (!terminal) throw new BrowserError('TRUST_CONFIRMATION_REQUIRED', '未写入配置。交互运行后确认一次，或明确传入 --trust-browser（仅信任此 MCP）。');
+    if (!terminal) throw new BrowserError('TRUST_CONFIRMATION_REQUIRED', '未写入配置。交互运行后确认一次，或明确传入 --trust-browser（仅信任此 MCP）；要保留逐次确认，传 --keep-approvals。');
     if (pending) {
+      const trusting = plans.some(plan => plan.trust === 'service');
       const prompt = createInterface({ input: stdin, output: stdout });
+      let answer: string;
       try {
-        const answer = await prompt.question(plans.some(plan => plan.trust === 'service') ? '信任并接入？[y/N] ' : '备份并接入？[y/N] ');
-        if (!/^(y|yes)$/i.test(answer.trim())) { console.log('已取消，配置未修改。'); return; }
+        answer = (await prompt.question(trusting ? '信任并接入？y 信任；k 接入但保留逐次确认；直接回车取消 [y/k/N] ' : '备份并接入？[y/N] ')).trim();
       } finally { prompt.close(); }
+      if (trusting && /^k(eep)?$/i.test(answer)) {
+        // 换成“保留审批”重新生成计划再写，和直接传 --keep-approvals 一样。
+        plans = await Promise.all(clients.map(client => setup.preview(client as SetupClient, { ...selection, trust: 'preserve' })));
+      } else if (!/^(y|yes)$/i.test(answer)) { console.log('已取消，配置未修改。'); return; }
     }
   }
   const completed: ConnectResult[] = [];

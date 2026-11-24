@@ -43,7 +43,7 @@ export class RemoteConnector {
     try {
       const next = RemoteSettings.parse(input);
       if (!next.token) { if (next.url !== this.settings.url && next.enabled) throw new BrowserError('REMOTE_TOKEN_REQUIRED', '更换服务器时需要重新填写 Token。'); next.token = this.settings.token; }
-      if (next.enabled) { remoteUrl(next.url); pairingCredential(next.token); if (Array.isArray(next.profiles) && !next.profiles.length) throw new BrowserError('REMOTE_PROFILES_REQUIRED', '至少选择一个允许远程使用的 Chrome 账号。'); }
+      if (next.enabled) { remoteUrl(next.url); pairingCredential(next.token); if (Array.isArray(next.profiles) && !next.profiles.length) throw new BrowserError('REMOTE_PROFILES_REQUIRED', '至少选择一个允许远程使用的浏览器。'); }
       await writeFile(temporary, JSON.stringify(next, null, 2), { flag: 'wx', mode: 0o600 });
       await rename(temporary, this.file);
       this.stopConnection(); this.settings = next; this.attempts = 0; this.error = undefined;

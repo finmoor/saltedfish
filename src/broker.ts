@@ -199,7 +199,7 @@ export class Broker {
     if (requestedId !== undefined && requestedId !== current.id) throw new BrowserError('DIALOG_MISMATCH', '弹窗 ID 已变化，未发送响应。');
     if (current.controller && current.controller.principalId !== principalId) throw new BrowserError('DIALOG_NOT_AUTHORIZED', '弹窗由另一个客户端的操作触发，不能代为响应。');
     const lease = this.leases.get(key), locked = this.locks.get(key);
-    if (!current.controller && ((lease && lease.expires > Date.now() && lease.owner !== owner) || (locked && locked !== owner))) throw new BrowserError('TAB_CLAIMED', '该标签页仍由另一个客户端占用。');
+    if (!current.controller && ((lease && lease.expires > Date.now() && lease.owner !== owner) || (locked && locked !== owner))) throw new BrowserError('TAB_CLAIMED', '这个标签页还被另一个客户端占用，弹窗留给它处理，未发送响应。');
     if (this.dialogReplies.has(key)) throw new BrowserError('DIALOG_BUSY', '此弹窗的响应仍在进行，不能重复提交。');
     this.dialogReplies.add(key);
     try { return await respond(current.id, current.connection, current.controller); }
@@ -213,7 +213,7 @@ export class Broker {
     const runningOwner = this.locks.get(key);
     if (runningOwner && runningOwner !== owner) throw new BrowserError('TAB_BUSY', '另一个客户端仍在操作该标签页，不能在操作中抢占。');
     if (existing && existing.expires > Date.now() && existing.owner !== owner) {
-      throw new BrowserError('TAB_CLAIMED', '标签页正由另一个客户端使用。请使用另一标签页，或等待该客户端释放。');
+      throw new BrowserError('TAB_CLAIMED', '这个标签页正被另一个客户端占用，未接管。用 chrome_new_tab 开新标签页，或等它释放后再接管。');
     }
     if (!existing && this.leases.size >= this.maxTabLeases) throw new BrowserError('LEASE_CAPACITY', '标签页占用数达到上限；释放不再使用的占用，或调整 maxTabLeases。');
     // 归属由服务端鉴权身份提供，不解析不稳定的 task owner，也不接收 MCP 参数。
@@ -234,7 +234,7 @@ export class Broker {
     const key = `${profileId}:${tabId}`;
     const existing = this.leases.get(key);
     const takenOver = !!existing && existing.owner !== owner && existing.expires > Date.now();
-    if (takenOver && !mayTakeOver?.(existing.owner)) throw new BrowserError('TAB_CLAIMED', '只能释放本客户端占用的标签页。');
+    if (takenOver && !mayTakeOver?.(existing.owner)) throw new BrowserError('TAB_CLAIMED', '这个标签页的占用不是你的，不用释放，也不能替别人释放。');
     this.leases.delete(key);
     return { released: true, ...(takenOver ? { takenOver: true } : {}) };
   }
@@ -249,7 +249,7 @@ export class Broker {
       else throw new BrowserError('RESULT_UNKNOWN', '上一次写操作的结果没有确认，标签页暂停写入。先检查页面，再调用 chrome_recover_tab，不要重复原操作。');
     }
     const lease = this.leases.get(key);
-    if (lease && lease.expires > Date.now() && lease.owner !== owner) throw new BrowserError('TAB_CLAIMED', '标签页被另一个客户端占用。');
+    if (lease && lease.expires > Date.now() && lease.owner !== owner) throw new BrowserError('TAB_CLAIMED', '这个标签页被另一个客户端占用，未执行。用 chrome_new_tab 开新标签页，或等它释放。');
     if (this.locks.has(key)) throw new BrowserError('TAB_BUSY', '标签页正在执行另一段操作；请等待完成。');
     if (!inspection) checks.admit?.();
     this.locks.set(key, owner);
@@ -263,7 +263,7 @@ export class Broker {
   recover(profileId: string, tabId: number, owner?: string, mayTakeOver?: (holder: string) => boolean) {
     const key = `${profileId}:${tabId}`;
     const lease = this.leases.get(key);
-    if (owner && lease && lease.owner !== owner && lease.expires > Date.now() && !mayTakeOver?.(lease.owner)) throw new BrowserError('TAB_CLAIMED', '不能替另一个客户端解除标签页保护。');
+    if (owner && lease && lease.owner !== owner && lease.expires > Date.now() && !mayTakeOver?.(lease.owner)) throw new BrowserError('TAB_CLAIMED', '这个标签页被另一个客户端占用，不能替它解除保护；由占用它的客户端处理，或等它释放。');
     if (this.locks.has(key)) throw new BrowserError('TAB_BUSY', '仍有操作正在运行。');
     this.quarantined.delete(key);
     return { recovered: true, note: '仅解除暂停，不重放任何操作。' };

@@ -22,7 +22,7 @@ test('saltedfish help 写明 dashboard 的 --onboarding / --logout-all 和 recov
   // src/cli.ts 的 dashboard 实际有这两个选项；npm 入口的帮助必须同步，用户才能发现“注销全部管理页登录”
   assert.match(stdout, /dashboard \[--onboarding \| --logout-all\]/);
   assert.match(stdout, /--logout-all[^\n]*注销全部管理页登录/, '要说明 --logout-all 做什么（它不打开页面）');
-  assert.match(stdout, /--onboarding[^\n]*接入页/);
+  assert.match(stdout, /--onboarding[^\n]*概览/);
   // npm 生命周期那批新增的恢复选项
   assert.match(stdout, /recover-lock \[--forget-run local\|gateway\]/);
   assert.match(stdout, /--forget-run[^\n]*陈旧的运行记录/);

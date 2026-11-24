@@ -1,4 +1,4 @@
-import { profileLabel, needsExtensionRefresh, extensionRefreshInstruction, profileInitial, trialPrompt, canOfferAbandon, lastSeenText, ABANDON_AFTER_HOURS } from './identity.js';
+import { profileLabel, needsExtensionRefresh, extensionRefreshInstruction, isPaused, profileInitial, trialPrompt, canOfferAbandon, lastSeenText, ABANDON_AFTER_HOURS } from './identity.js';
 
 const $ = selector => document.querySelector(selector);
 const routes = { overview: '概览', accounts: '浏览器', agents:'Agent 连接', setup: '主机辅助配置', remote: '当前服务', tasks: '任务与流程', workflows: '任务与流程', access: '访问权限', activity: '操作记录' };
@@ -126,7 +126,7 @@ export function initializeWorkspace({ el, button, run, onNavigate, onRefresh, on
     const experienced = !!summary.agents?.some(a => a.lastUsedAt);
     $('.usage-panel').hidden = experienced;
     $('#overview-title').textContent = stale ? '连接状态需要更新。' : needsReview ? '有操作需要先核查。' : outdated.length ? '浏览器扩展需要更新。' : !profiles.length ? '先连接一个浏览器。' : !online.length ? '打开浏览器，继续连接。' : ready ? '浏览器已就绪。' : '浏览器连好了，接入 Agent 吧。';
-    $('#overview-description').textContent = stale ? '先恢复管理页连接，再判断浏览器是否在线。' : needsReview ? '连接与任务记录已保留。请先检查对应浏览器的实际结果，确认后再继续操作。' : outdated.length ? `${outdated.length} 个在线浏览器仍在使用旧扩展。${extensionRefreshInstruction}` : !profiles.length ? '保留你熟悉的登录状态，让 Agent 在你指定的 Chrome 里工作。' : !online.length ? '打开这个 Chrome 会自动连上。扩展重装过的话，到“浏览器”里点“重新连接”。' : ready ? `有 ${online.length} 个浏览器在线。日常任务直接在 Agent 的聊天里提出。` : '为这台电脑上的 Agent 创建独立授权，再把配置导入它。Agent 要和服务在同一台电脑上。';
+    $('#overview-description').textContent = stale ? '先恢复管理页连接，再判断浏览器是否在线。' : needsReview ? '连接与任务记录已保留。请先检查对应浏览器的实际结果，确认后再继续操作。' : outdated.length ? `${outdated.length} 个在线浏览器仍在使用旧扩展。${extensionRefreshInstruction(outdated.every(profile => profile.capabilities?.includes('self-update-v1')) ? outdated[0] : undefined)}` : !profiles.length ? '保留你熟悉的登录状态，让 Agent 在你指定的 Chrome 里工作。' : !online.length ? '打开浏览器，扩展会自动连上；暂停着的，到扩展里点“继续连接”。扩展重装过或换了文件夹，到“浏览器”里点“重新连接”。' : ready ? `有 ${online.length} 个浏览器在线。日常任务直接在 Agent 的聊天里提出。` : '为这台电脑上的 Agent 创建独立授权，再把配置导入它。Agent 要和服务在同一台电脑上。';
     const next = $('#overview-next'); next.href = !online.length ? '#accounts' : ready && !experienced ? '#overview' : '#agents'; next.firstChild.textContent = !online.length ? '连接浏览器 ' : !ready ? '接入 Agent ' : experienced ? '查看 Agent 连接 ' : '开始使用 ';
     if (outdated.length) { next.href = '#accounts'; next.firstChild.textContent = '查看扩展更新 '; }
     if (needsReview) { next.href = '#activity'; next.firstChild.textContent = '查看待核查操作 '; }
@@ -142,7 +142,7 @@ export function initializeWorkspace({ el, button, run, onNavigate, onRefresh, on
       // 带上 profile：浏览器页会把这一个的卡片标出来并滚到眼前，和上面的“管理全部”区分开。
       link.href='#accounts?profile='+encodeURIComponent(profile.id); link.setAttribute('aria-label',`管理 ${profileLabel(profile, profiles)}`);
       const refreshNeeded = needsExtensionRefresh(profile, summary.requiredExtensionCapability);
-      text.append(el('h3',profileLabel(profile, profiles)),el('p',stale ? '上次状态，等待更新' : refreshNeeded ? extensionRefreshInstruction : profile.online ? '已连接 · 保留此 Chrome 的登录状态' : '未连接 · 打开原 Chrome 后继续',profile.online && !refreshNeeded && !stale ? 'connected-text' : 'muted')); row.append(icon,text,link); root.append(row);
+      text.append(el('h3',profileLabel(profile, profiles)),el('p',stale ? '上次状态，等待更新' : refreshNeeded ? extensionRefreshInstruction(profile) : profile.online ? '已连接 · 保留此 Chrome 的登录状态' : isPaused(profile) ? '已暂停 · 到这个 Chrome 的扩展里点“继续连接”' : '未连接 · 打开原 Chrome 后继续',profile.online && !refreshNeeded && !stale ? 'connected-text' : 'muted')); row.append(icon,text,link); root.append(row);
     }
     }
     const select = $('#example-profile'), previous = select.value, nextChoicesKey=JSON.stringify([profiles.map(p=>[p.id,p.label,p.online,p.capabilities]),summary.requiredExtensionCapability]);
@@ -169,7 +169,7 @@ export function initializeWorkspace({ el, button, run, onNavigate, onRefresh, on
           if (item.online === false) {
             const offer = canOfferAbandon(item, summary.checkedAt);
             if (offer) { const abandon = button('放弃此配置…', node=>onAbandon(item.profileId, node), 'danger', ()=>!stale); abandon.setAttribute('aria-label', `放弃此配置…（${name}）`); abandon.disabled = stale; row.append(abandon); }
-            row.append(el('small', `未连接，${lastSeenText(item, summary.checkedAt)}。${offer ? '如果这个配置已经不存在，可以放弃它的待核查记录；否则请打开原来的 Chrome 继续连接后再核查。' : `请打开原来的 Chrome 继续连接后再核查；超过 ${ABANDON_AFTER_HOURS} 小时没有出现，才可以放弃这个配置。`}`, 'protection-offline'));
+            row.append(el('small', `未连接，${lastSeenText(item, summary.checkedAt)}。${offer ? '扩展重装过或换了文件夹的，到“浏览器”里点“重新连接”接回后核查；这个 Chrome 配置已经不存在时，才放弃它的待核查记录。' : `请打开原来的 Chrome 继续连接后再核查；超过 ${ABANDON_AFTER_HOURS} 小时没有出现，才可以放弃这个配置。扩展重装过或换了文件夹的，到“浏览器”里点“重新连接”。`}`, 'protection-offline'));
           }
           notice.append(row);
         }
@@ -181,7 +181,7 @@ export function initializeWorkspace({ el, button, run, onNavigate, onRefresh, on
     const refreshNeeded = profile && needsExtensionRefresh(profile, summary.requiredExtensionCapability);
     const remoteOnly = !summary?.unified && !agents?.some(a=>a.connection==='configured') && summary?.remote.state === 'connected';
     const outsideRemoteScope = profile && remoteOnly && Array.isArray(summary.remote.profiles) && !summary.remote.profiles.includes(profile.id);
-    $('#example-prompt').textContent = refreshNeeded ? extensionRefreshInstruction : outsideRemoteScope ? '此浏览器未授权给远程服务器。请到“远程服务器”明确选择允许的浏览器后再使用。' : profile ? trialPrompt(profile) : $('#example-profile').value ? '所选浏览器尚未连接。打开原 Chrome 后继续，这里不会自动切换到其他账号。' : '选择浏览器后，这里会生成可以直接发送给 Agent 的试用指令。';
+    $('#example-prompt').textContent = refreshNeeded ? extensionRefreshInstruction(profile) : outsideRemoteScope ? '此浏览器未授权给远程服务器。请到“远程服务器”明确选择允许的浏览器后再使用。' : profile ? trialPrompt(profile) : $('#example-profile').value ? '所选浏览器尚未连接。打开原 Chrome 后继续，这里不会自动切换到其他账号。' : '选择浏览器后，这里会生成可以直接发送给 Agent 的试用指令。';
     $('#copy-example').disabled=!profile||stale||!!outsideRemoteScope||!!refreshNeeded;
     $('#example-note').textContent=refreshNeeded?'刷新后，这里会自动恢复同一个浏览器的试用指令，无需重新配对。':profile?'指令包含所选浏览器的固定 ID，同名或改名时也能确认目标。这个任务只读取页面信息。':'还没有在线浏览器时，先完成左侧连接步骤。';
   }

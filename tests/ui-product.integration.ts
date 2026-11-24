@@ -92,11 +92,12 @@ test('未认证深链接只显示登录入口，不把在线浏览器误报为�
   await h.page.screenshot({path:path.join(output,`${name}.png`),fullPage:true});
  }
  await h.page.$eval('#login-command-alternative',e=>(e as HTMLDetailsElement).open=true);
- for(const[method,command,width,height,name]of[['native','.\\SaltedFish.exe dashboard',1440,900,'native-desktop'],['npm','saltedfish dashboard',390,844,'npm-mobile'],['native','.\\SaltedFish.exe dashboard',320,740,'native-small']]as const){
-  await h.page.click('#login-'+method);assert.equal(await h.page.$eval('#login-'+method,e=>e.getAttribute('aria-pressed')),'true');assert.equal(await h.page.$eval('#login-'+(method==='native'?'npm':'native'),e=>e.getAttribute('aria-pressed')),'false');
+ // 原生 Windows 安装包已经不发行：登录页只有 npm 命令一种，说明同时写 Windows（直接打开已登录页）和其他系统（链接加 4 位码）。
+ assert.equal(await h.page.$('#login-native'),null,'不再提供 Windows 安装包页签');
+ for(const[command,width,height,name]of[['saltedfish dashboard',1440,900,'desktop'],['saltedfish dashboard',390,844,'npm-mobile'],['saltedfish dashboard',320,740,'small']]as const){
   assert.equal(await h.page.$eval('#login-command',e=>e.textContent!.trim()),command);assert.equal(await h.page.$eval('#copy-login-command',e=>(e as HTMLElement).dataset.copy),command);
-  const instruction=await h.page.$eval('#login-instruction',e=>e.textContent!);assert.match(instruction,method==='native'?/文件夹|目录/:/终端|命令行/);
-  const next=await h.page.$eval('#login-next-step',e=>e.textContent!);assert.match(next,method==='native'?/打开已登录的管理页/:/登录链接和 4 位登录码/);assert.equal(await h.page.$eval('#login-code-form',e=>getComputedStyle(e).display==='none'),method==='native','Windows 安装包不打印登录码，不显示输入框');
+  const instruction=await h.page.$eval('#login-instruction',e=>e.textContent!);assert.match(instruction,/终端/);
+  const next=await h.page.$eval('#login-next-step',e=>e.textContent!);assert.match(next,/Windows 上.*打开已登录的管理页/);assert.match(next,/登录链接和 4 位登录码/);assert.equal(await h.page.$eval('#login-code-form',e=>getComputedStyle(e).display==='none'),false,'登录码输入框一直可用');
   const pagesBefore=(await h.browser.pages()).length;await h.page.click('#copy-login-command');await h.page.waitForFunction(command=>(window as any).copied===command,{},command);
   assert.equal((await h.browser.pages()).length,pagesBefore,'复制命令不自动执行或打开页面');assert.equal(await h.page.evaluate(()=>location.hash),'#remote');assert.equal(await h.page.evaluate(()=>sessionStorage.getItem('chrome-mcp-session')),null);
   assert.equal(await h.page.$eval('#workspace',e=>(e as HTMLElement).hidden),true);assert.equal(h.requests.length,0,'命令选择与复制不发送未授权POST');await captureLogin(width,height,name);

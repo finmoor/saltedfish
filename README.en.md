@@ -84,17 +84,26 @@ npm install -g saltedfish
 saltedfish install
 ```
 
-`install` starts the service, connects the agents on this computer, and prints the extension folder. Then:
+`install` starts the service, connects the agents on this computer, and prints the extension folder. The dashboard and the extension are in Chinese only, so the steps below give each label as it appears on screen. Then:
 
-1. **Load the extension.** Open `chrome://extensions`, turn on Developer mode, choose "Load unpacked" and select the printed folder.
-2. **Pair it.** `saltedfish dashboard` opens the dashboard; create a pairing code under "Browsers" and paste it into the extension.
-3. **Use it.** Start a new session in your agent, for example:
+1. **Load the extension.** Open `chrome://extensions`, turn on Developer mode, choose "Load unpacked", and pick the folder depending on where Chrome runs:
+   - Chrome on this computer: the folder `install` printed. It is updated together with the service.
+   - Chrome on another computer: the extension ZIP downloaded from the dashboard's 浏览器 (Browsers) page, which already carries the service address, or the ZIP for the same version from [Releases](https://github.com/finmoor/saltedfish/releases/latest). Unzip it into a folder that will stay put and pick that folder.
+2. **Pair it.** `saltedfish dashboard` opens the dashboard. On the 浏览器 (Browsers) page, create a pairing code (生成配对码), paste it into the extension and click 连接 (Connect). The code carries the service address, so there is nothing else to fill in.
+3. **Use it.** Start a new session in your agent and try a read-only request first:
 
-> Use SaltedFish. List the browser profiles, find "Work", and only use that profile. Open a new tab for the task and check the result on the page when you are done.
+> Use SaltedFish to list my browsers and the tabs open in each one, and tell me each page's title. Don't change any page yet.
+
+After that, just ask for what you need, for example "In the browser called 'Work', open a new tab and look up tomorrow's weather in Shanghai."
 
 ### Agents on a server, Chrome on your desk
 
-Run the same two commands on a Linux server (it listens on the LAN IP, port 18445 by default), then `saltedfish dashboard`. Open the link it prints on your own computer, create a pairing code, then get the extension: download it from the dashboard, or take `saltedfish-extension-<version>.zip` for the same version as the service from [Releases](https://github.com/finmoor/saltedfish/releases/latest). Unzip it into a folder that will stay put, load it into Chrome and paste the code.
+Run the same two commands on a Linux server (it listens on the LAN IP, port 18445 by default), then `saltedfish dashboard`. First make sure your computer can reach the address it prints:
+
+- Server and computer on the same trusted LAN: use the default HTTP address.
+- Cloud server or a different network: the default-route IP is usually a private address your computer cannot reach. Set up an HTTPS address your computer can reach first (see [HTTP and HTTPS](docs/npm.md#http-与-https), Chinese), or join both to the same network over a VPN.
+
+Open the link on your own computer, create a pairing code, then get the extension: download it from the dashboard, or take `saltedfish-extension-<version>.zip` for the same version as the service from [Releases](https://github.com/finmoor/saltedfish/releases/latest). Unzip it into a folder that will stay put, load it into Chrome and paste the code.
 
 Agents must run on the same machine as the service. A LAN uses plain HTTP; add a certificate to cross the public internet. See the [install guide](docs/npm.md) (Chinese).
 
@@ -193,7 +202,7 @@ Pairing browsers, granting agents, tab groups and the operation log all live in 
 | Recovery | Operations are written to SQLite before dispatch; the protection survives a killed process or a restart |
 | Large results | Big JSON and images are saved to disk and read page by page |
 | Taking over | Pause from the extension; stopping debugging by hand in Chrome pauses the connection and it is not taken back automatically |
-| Upgrades | `saltedfish upgrade` rolls back if the switch fails; an unpacked extension updates with one click from its settings page and keeps its pairing |
+| Upgrades | `saltedfish upgrade` rolls back if the switch fails and the data format is still compatible; an unpacked extension updates with one click from its settings page and keeps its pairing |
 
 ## Security and data
 
@@ -212,7 +221,7 @@ See [PRIVACY.md](PRIVACY.md). Please report vulnerabilities privately as describ
 - "Unrestricted" describes SaltedFish as a tool. The rules and approvals of the model and client behind an agent are not its to change.
 - No automation guarantees for Chrome internal pages, other extensions' pages, native OS windows, CAPTCHAs or OS permission dialogs.
 - Web pages can observe the DOM and input events; SaltedFish does not promise that sites cannot tell automation apart from a person.
-- While an agent is connected, Chrome shows a "being debugged" bar on every tab. Starting Chrome with `--silent-debugger-extension-api` removes it; see the install guide for the trade-offs.
+- While an agent is connected, Chrome shows a "being debugged" bar on every tab. Starting Chrome with `--silent-debugger-extension-api` removes it; see [removing the bar](docs/npm.md#去掉正在调试此浏览器提示条) (Chinese) for how and the trade-offs.
 - Chrome's debugger API can conflict with DevTools and other extensions, and some CDP domains are not available to extensions.
 - Actions that were already sent cannot be undone. Editing the page by hand while a task runs can affect the result; pause the extension before taking over.
 

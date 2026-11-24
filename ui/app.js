@@ -3,7 +3,7 @@ import {initializeConnections} from './connections.js';
 import { initializeWorkspace, createControls, copyText } from './workspace.js';
 import { initializeActivity } from './activity.js';
 import { initializeAgents } from './agents.js';
-import { profileLabel, needsExtensionRefresh, extensionRefreshInstruction, extensionUpdateInstruction, accessScopeLabel } from './identity.js';
+import { profileLabel, needsExtensionRefresh, extensionRefreshInstruction, extensionUpdateInstruction, accessScopeLabel, isPaused, offlineDescription } from './identity.js';
 import { desktopSettingsHref, managementReturnTarget, settingsTarget } from './desktop-link.js';
 import {randomId} from './random-id.js';
 // 管理页只在 sessionStorage 里保留有期限、可撤销、服务重启即失效的会话令牌；长期管理员密钥和一次性登录码都只用来换会话，不落盘。
@@ -69,27 +69,12 @@ async function checkService() {
   }catch{if(revision===healthRevision){output.dataset.state='error';output.textContent='暂时无法连接服务，请确认 SaltedFish 正在运行后重试。';desktopLaunch=false;updateDesktopLaunch();}}
   finally{if(revision===healthRevision)control.disabled=false;}
 }
-// Windows 安装包的命令直接打开已登录的页面，不打印登录码。
-function loginNextStep(){
-  const native=document.querySelector('#login-native').getAttribute('aria-pressed')==='true';
-  document.querySelector('#login-next-step').textContent=native?'命令会在这台电脑的浏览器里打开已登录的管理页。配对码不能用来登录。':'命令会给出一个登录链接和 4 位登录码。在当前浏览器打开链接，或者在这里输入登录码。配对码不能用来登录。';
-  document.querySelector('#login-code-form').hidden=native;
-}
 function loginDestination(){
   const names={remote:'当前服务',agents:'Agent 连接',accounts:'浏览器',setup:'主机辅助配置',tasks:'任务与流程',workflows:'任务与流程',access:'访问权限',activity:'操作记录'};
   const route=location.hash.slice(1).split('?')[0],name=Object.hasOwn(names,route)?names[route]:undefined;
   document.querySelector('#login-target').textContent=name?`本次要设置：${name}`:'本次要打开：管理概览';
   document.querySelector('#login-description').textContent='当前管理页属于 '+location.origin+'。获准管理的Chrome可从扩展直接进入；首次登录按下面两步。';
-  loginNextStep();
   updateDesktopLaunch();
-}
-function loginMethod(method){
-  const native=method==='native';
-  document.querySelector('#login-native').setAttribute('aria-pressed',String(native));document.querySelector('#login-npm').setAttribute('aria-pressed',String(!native));
-  const command=native?'.\\SaltedFish.exe dashboard':'saltedfish dashboard',button=document.querySelector('#copy-login-command');
-  document.querySelector('#login-command').textContent=command;button.dataset.copy=command;button.textContent='复制命令';button.dataset.label='复制命令';
-  document.querySelector('#login-instruction').textContent=native?'在服务所在电脑的 SaltedFish 安装文件夹中打开 PowerShell，粘贴下面命令并按 Enter。':'在服务所在电脑打开安装了 SaltedFish 的终端，粘贴下面命令并按 Enter。';
-  document.querySelector('#login-copy-status').textContent='';loginNextStep();
 }
 async function request(route, method = 'GET', value, binary = false) {
   const revision=sessionRevision,ensureCurrent=()=>{if(revision!==sessionRevision){const error=new Error('连接已变化，已忽略旧请求的返回。');error.code='STALE_SESSION';throw error;}};
@@ -148,7 +133,9 @@ async function renderProfiles() {
   profilesRoot.replaceChildren();
   for (const select of [document.querySelector('#client-profile'), document.querySelector('#activity-profile')]) {
     const previous = select.value; select.replaceChildren();
-    const option = el('option', select.id === 'client-profile' ? '所有已配对账号' : '选择浏览器'); option.value = select.id === 'client-profile' ? '*' : ''; select.append(option);
+    // 访问权限页不预选“全部”：先放一个空的“请选择”，下拉框必选，全部要主动选。
+    const option = el('option', select.id === 'client-profile' ? '请选择' : '选择浏览器'); option.value = ''; select.append(option);
+    if (select.id === 'client-profile') { const all = el('option', '全部浏览器（含以后新增）'); all.value = '*'; select.append(all); }
     for (const profile of profiles) { const option = el('option', profileLabel(profile, profiles)); option.value = profile.id; select.append(option); }
     if ([...select.options].some(option => option.value === previous)) select.value = previous;
   }
@@ -159,16 +146,18 @@ async function renderProfiles() {
     const reloadNeeded = !!(profile.online && profile.extensionReload), refreshNeeded = !reloadNeeded && needsExtensionRefresh(profile, requiredExtensionCapability);
     const article = el('article',undefined,'profile-card'), heading = el('div', undefined, 'profile-heading'), title = el('h3', profileLabel(profile, profiles));
     article.dataset.profileId = profile.id;
-    title.append(el('span', reloadNeeded ? '扩展需要重新加载' : refreshNeeded ? '扩展需要更新' : profile.online ? '已连接' : '未连接', profile.online && !refreshNeeded && !reloadNeeded ? 'badge' : 'badge offline'));
+    const paused = isPaused(profile);
+    title.append(el('span', reloadNeeded ? '扩展需要重新加载' : refreshNeeded ? '扩展需要更新' : profile.online ? '已连接' : paused ? '已暂停' : '未连接', profile.online && !refreshNeeded && !reloadNeeded ? 'badge' : 'badge offline'));
     const actions = el('div', undefined, 'row-actions');
-    if (!profile.online) actions.append(button('重新连接', async () => { await connectionsUI.reconnect(profile); await renderProfiles(); document.querySelector('.reconnect-panel button')?.focus(); }));
+    // 暂停的浏览器扩展好好的，在扩展里继续就行；“重新连接”会换发配对码、作废原配对，不给这个按钮。
+    if (!profile.online && !paused) actions.append(button('重新连接', async () => { await connectionsUI.reconnect(profile); await renderProfiles(); document.querySelector('.reconnect-panel button')?.focus(); }));
     actions.append(button('改名', async () => { const label = prompt('这个浏览器叫什么？例如：个人、工作', profile.label); if (label) { await call('chrome_rename_profile', { profileId: profile.id, label }); await render(true); } }));
     if (profile.online) actions.append(button('查看标签页', () => loadTabs(profile, article)));
-    if (profile.online && profile.capabilities?.includes('pause-control')) actions.append(button('暂停控制', async () => { await call('chrome_pause_profile', { profileId: profile.id }); status.textContent = '此浏览器已暂停。需要继续时，在它的 SaltedFish 扩展中点击继续连接。'; await render(true); }, 'danger'));
+    if (profile.online && profile.capabilities?.includes('pause-control')) actions.append(button('暂停 Agent', async () => { await call('chrome_pause_profile', { profileId: profile.id }); status.textContent = '此浏览器已暂停，Agent 不能再操作它。要继续时，在这个 Chrome 的 SaltedFish 扩展里点“继续连接”；管理页不能替你继续。'; await render(true); }, 'danger'));
     else if (profile.online) actions.append(el('small', '新功能需更新扩展'));
     if (!profile.online) actions.append(button('移除…', node => removeProfile(profile, node), 'danger'));
     heading.append(title, actions); const info = el('details'); info.append(el('summary','连接详情'),el('p',`配置 ID：${profile.id} · 扩展 ${profile.version}`,'identity'));
-    article.append(heading,el('p',reloadNeeded ? profile.extensionReload : refreshNeeded ? extensionRefreshInstruction : extensionUpdateInstruction(profile, extensionRelease) || (profile.online ? 'Agent 会使用这个 Chrome 配置现有的登录状态。' : '打开这个 Chrome 会自动连上。连不上或扩展重装过，点“重新连接”。'),'profile-description'),info); const panel = connectionsUI.reconnectPanel(profile); if (panel) article.append(panel); profilesRoot.append(article);
+    article.append(heading,el('p',reloadNeeded ? profile.extensionReload : refreshNeeded ? extensionRefreshInstruction(profile) : extensionUpdateInstruction(profile, extensionRelease) || (profile.online ? 'Agent 会使用这个 Chrome 配置现有的登录状态。' : offlineDescription(profile)),'profile-description'),info); const panel = connectionsUI.reconnectPanel(profile); if (panel) article.append(panel); profilesRoot.append(article);
   }
   markLinkedProfile();
 }
@@ -255,14 +244,13 @@ workspace = initializeWorkspace({el,button,run,onNavigate:activate,onRefresh:()=
 productUI = initializeProduct({ call, request, el, button, run, status, getProfiles: () => profiles, onReview:profileId=>activityUI.open(profileId), isActive:()=>workspace.active(), onClients:data=>workspace.setAgents(data) });
 connectionsUI=initializeConnections({request,el,button,run,status,getProfiles:()=>profiles});
 agentsUI = initializeAgents({request,el,run,getProfiles:()=>profiles,isActive:()=>workspace.active()==='agents'});
-document.querySelector('#login-native').onclick=()=>loginMethod('native');document.querySelector('#login-npm').onclick=()=>loginMethod('npm');
 document.querySelector('#check-login-service').onclick=()=>void checkService();
 document.querySelector('#open-desktop-settings').onclick=event=>{if(!event.currentTarget.getAttribute('href')){event.preventDefault();return;}document.querySelector('#desktop-login-status').textContent='请允许浏览器打开 SaltedFish，然后在应用打开的新页面继续。';};
 document.querySelector('#copy-login-command').onclick=event=>{
   const control=event.currentTarget,command=control.dataset.copy;
   void run(control,async()=>{await copyText(command,control);if(control.dataset.copy===command)document.querySelector('#login-copy-status').textContent=command.startsWith('.\\')?'已复制。请在 SaltedFish 安装文件夹的 PowerShell 中粘贴并回车。':'已复制。请在终端粘贴并回车。';else control.textContent='复制命令';});
 };
-loginMethod('npm');loginDestination();
+loginDestination();
 addEventListener('hashchange',()=>{loginDestination();if(!authenticated)void checkService();});
 addEventListener('focus',()=>{if(!authenticated)void checkService();});
 let startupError = '';

@@ -15,6 +15,8 @@ export interface OperationsQuery {
   acknowledged?: boolean;
 }
 export interface OperationsPage { items: OperationRecord[]; total: number; nextOffset: number | null }
+/** chrome_tabs 结果里管理页用到的字段。 */
+export interface TabSummary { tabId: number; title?: string; url?: string }
 export interface RecoverySelection { item: OperationRecord; selection: ActivitySelection; revision: number }
 export type Action = () => void | Promise<unknown>;
 
@@ -36,6 +38,8 @@ export interface ActivityDependencies {
   call: {
     (name: 'chrome_operations', args: OperationsQuery): Promise<OperationsPage>;
     (name: 'chrome_recover_operation', args: { operationId: string; acknowledged: true }): Promise<unknown>;
+    /** 只用来给操作记录里的标签号配上现在的标题和网址。 */
+    (name: 'chrome_tabs', args: { profileId: string; limit: number }): Promise<{ items: TabSummary[] }>;
   };
   /** 管理页对本机服务的请求封装（带会话令牌、会话变化时丢弃旧响应；失败的 Error 上挂着服务端错误码）。 */
   request: {
