@@ -141,4 +141,4 @@ Agent 可用 `chrome_task_submit` 提交、`chrome_task` 查详情、`chrome_tas
 
 大 JSON、图片和任务故障截图保存在服务数据目录，受容量预算限制。任务详情可查看关联结果；`saltedfish results list` 列出结果，`saltedfish results remove ARTIFACT_ID` 永久删除选定结果，不会批量自动清理。
 
-客户端接入前会备份原配置；可在接入页或 `connect --history` 中查看，使用 `connect --restore ID` 恢复。文件存在后续修改时拒绝覆盖，备份最多 100 份。不要分享原始备份，其中可能包含其他服务凭据。
+客户端接入前会备份原配置；可在接入页或 `connect --history` 中查看，使用 `connect --restore ID` 恢复。文件存在后续修改时拒绝覆盖。备份自动轮换：每个配置文件保留第一次接入前的原样和最近 5 份，总数不超过 100 份。不要分享原始备份，其中可能包含其他服务凭据。

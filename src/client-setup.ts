@@ -33,6 +33,10 @@ const installedEntry = (servers: Record<string, any>) => servers[MCP_NAME] ?? se
 const hash = (value: string | undefined) => value === undefined ? 'missing' : createHash('sha256').update(value).digest('hex');
 const fileRecord = { target: z.string(), existed: z.boolean(), beforeHash: z.string().regex(/^(missing|[0-9a-f]{64})$/), afterHash: z.string().regex(/^[0-9a-f]{64}$/) };
 const backupRecord = z.object({ id: z.string().uuid(), client: z.enum(setupClients), ...fileRecord, configTarget: z.string().optional(), permissions: z.object(fileRecord).optional(), selection: z.object({ trust: z.enum(['preserve','service','prompt']).optional(), format: z.enum(['v1','v2']).optional(), projectDirectory: z.string().optional(), configPath: z.string().optional() }).optional(), createdAt: z.iso.datetime() });
+type BackupRecord = z.infer<typeof backupRecord>;
+// 每次升级都会改写每个已接入客户端的目录版本，一次一份备份，不轮换的话十几次升级就满了。
+// 按配置文件保留第一次接入前的原样和最近 BACKUP_RECENT 份；总数到 BACKUP_LIMIT 再从最旧的删起。
+const BACKUP_LIMIT = 100, BACKUP_RECENT = 5, backupFile = /^[0-9a-f-]{36}\.json$/;
 async function exists(file: string) { try { await access(file); return true; } catch { return false; } }
 async function readConfig(file: string): Promise<string | undefined> {
   try { if ((await stat(file)).size > 4 * 1024 * 1024) throw new BrowserError('CLIENT_CONFIG_TOO_LARGE', '客户端配置超过 4 MiB，未修改。'); return await readFile(file, 'utf8'); }
@@ -205,18 +209,49 @@ export class ClientSetup {
       } catch (error) { return { client, label: clientLabels[client], ...capabilities, error: error instanceof BrowserError ? error.message : '无法读取配置路径' }; }
     }));
   }
+  // restore 认的状态：每份文件不是“接入后”就是“接入前”，且至少一份是“接入后”。双文件接入中途失败后可能只有一份已写入。
+  private async restorable(change: BackupRecord, current: (file: string) => Promise<string> = async file => hash(await readConfig(file))) {
+    await this.assertTarget(change.target);
+    const states = [[change.target, change.beforeHash, change.afterHash], ...change.permissions ? [[change.permissions.target, change.permissions.beforeHash, change.permissions.afterHash]] : []] as [string, string, string][];
+    const now = await Promise.all(states.map(async ([target, before, after]) => { const value = await current(target); return value === after ? 'after' : value === before ? 'before' : 'other'; }));
+    return now.every(state => state !== 'other') && now.includes('after');
+  }
+  // 写新备份前腾地方，incoming 是这次要记的配置文件（它自己占一份“最近”）。
+  // 不删的：每个配置文件最新的一份（升级刷新靠它认出接过哪些客户端、用户恢复过没有），眼下还能恢复的，读不出来的（看不出属于谁）。
+  // 删不掉的文件留到下次；还是满的话由调用方报 SETUP_BACKUP_CAPACITY。
+  private async rotateBackups(folder: string, incoming: string) {
+    const records: BackupRecord[] = []; let damaged = 0;
+    for (const file of (await readdir(folder)).filter(file => backupFile.test(file))) { try { records.push(await this.readBackup(file.slice(0, -5))); } catch { damaged++; } }
+    const hashes = new Map<string, Promise<string>>(), current = (file: string) => { if (!hashes.has(file)) hashes.set(file, readConfig(file).then(hash)); return hashes.get(file)!; };
+    const groups = new Map<string, BackupRecord[]>(), oldestFirst = (a: BackupRecord, b: BackupRecord) => Date.parse(a.createdAt) - Date.parse(b.createdAt);
+    for (const record of records) { const key = record.configTarget ?? record.target; groups.set(key, [...groups.get(key) ?? [], record]); }
+    const drop: BackupRecord[] = [], spare: BackupRecord[] = [];
+    for (const [key, group] of groups) {
+      group.sort(oldestFirst);
+      const recent = BACKUP_RECENT - (key === incoming ? 1 : 0);
+      for (const [index, record] of group.slice(0, -1).entries()) {
+        if (await this.restorable(record, current).catch(() => false)) continue;
+        (index === 0 || index >= group.length - recent ? spare : drop).push(record);
+      }
+    }
+    // 原样和最近几份平时都留着；配置文件太多、按文件留下的加起来还超过上限时，再从最旧的删起。
+    let total = records.length + damaged + 1 - drop.length;
+    for (const record of spare.sort(oldestFirst)) { if (total <= BACKUP_LIMIT) break; drop.push(record); total--; }
+    // 记录最后删：中途失败时记录还在，下次照样认得出来再删。
+    for (const { id } of drop) {
+      try { for (const suffix of ['config', 'permissions']) await rm(path.join(folder, `${id}.${suffix}`), { force: true }); await rm(path.join(folder, `${id}.json`), { force: true }); }
+      catch { /* 被占用的留到下次 */ }
+    }
+  }
   async history() {
     const folder = path.join(this.config.dataDir, 'setup-backups');
     const files = await readdir(folder).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error; });
     const entries: { changeId: string; client: string; target?: string; createdAt?: string; canRestore: boolean; issue?: string }[] = [];
-    for (const file of files.filter(file => /^[0-9a-f-]{36}\.json$/.test(file)).slice(-100)) {
+    for (const file of files.filter(file => backupFile.test(file)).slice(-BACKUP_LIMIT)) {
       const id = file.slice(0, -5);
       try {
         const change = await this.readBackup(id); let canRestore = false, issue: string | undefined;
-        try { await this.assertTarget(change.target); const states = [[change.target, change.beforeHash, change.afterHash], ...change.permissions ? [[change.permissions.target, change.permissions.beforeHash, change.permissions.afterHash]] : []] as [string, string, string][];
-          // 双文件接入中途失败后可能只有一份已写入，restore 也认这种状态。
-          const now = await Promise.all(states.map(async ([target, before, after]) => { const current = hash(await readConfig(target)); return current === after ? 'after' : current === before ? 'before' : 'other'; }));
-          canRestore = now.every(state => state !== 'other') && now.includes('after'); }
+        try { canRestore = await this.restorable(change); }
         catch (error) { issue = error instanceof BrowserError ? error.message : '暂时无法读取原配置，未改动文件。'; }
         entries.push({ changeId: change.id, client: change.client, target: change.target, createdAt: change.createdAt, canRestore, ...(issue ? { issue } : {}) });
       } catch { entries.push({ changeId: id, client: '备份记录异常', canRestore: false, issue: '记录不完整或损坏，请保留文件并检查其他备份。' }); }
@@ -225,10 +260,13 @@ export class ClientSetup {
   }
   async refreshCatalogs() {
     const completed: unknown[] = [], skipped: {client:string;target?:string;reason:string}[] = [], seen = new Set<string>();
-    for (const item of await this.history()) {
-      if (!(setupClients as readonly string[]).includes(item.client) || !item.target) continue;
+    // 记录先全部读出来再刷新：刷新写入时会轮换备份，同一配置文件的旧记录可能还没轮到就被删了。
+    const items = [];
+    for (const item of await this.history()) if ((setupClients as readonly string[]).includes(item.client) && item.target) items.push({ item, loaded: await this.readBackup(item.changeId).catch((error: unknown) => error instanceof Error ? error : new Error(String(error))) });
+    for (const { item, loaded } of items) {
       try {
-        const record = await this.readBackup(item.changeId), project = record.selection?.projectDirectory, configTarget = record.configTarget ?? record.target;
+        if (loaded instanceof Error) throw loaded;
+        const record = loaded, project = record.selection?.projectDirectory, configTarget = record.configTarget ?? record.target;
         if (seen.has(configTarget)) continue;
         seen.add(configTarget);
         const tracksSelection = ['claude-desktop', 'codebuddy', 'workbuddy'].includes(record.client);
@@ -464,7 +502,8 @@ export class ClientSetup {
       }
       const folder = path.join(this.config.dataDir, 'setup-backups'); await mkdir(folder, { recursive: true });
       const metadata = path.join(folder, `${id}.json`), ready = await exists(metadata);
-      if (!ready && (await readdir(folder)).filter(file => file.endsWith('.json')).length >= 100) throw new BrowserError('SETUP_BACKUP_CAPACITY', '已保存 100 份配置备份，请先整理 setup-backups 再继续接入。');
+      if (!ready) await this.rotateBackups(folder, plan.configTarget ?? plan.target);
+      if (!ready && (await readdir(folder)).filter(file => backupFile.test(file)).length >= BACKUP_LIMIT) throw new BrowserError('SETUP_BACKUP_CAPACITY', `配置备份已满 ${BACKUP_LIMIT} 份，剩下的都不能自动删（各配置文件最新的一份、眼下还能恢复的、读不出来的），本次没有改配置。备份在文件夹 ${folder}：运行 saltedfish connect --history 查看，确认用不上的，把 ID.json 和同名的 .config、.permissions 文件一起删掉，再重试。`);
       for (const [file, suffix] of [[plan, 'config'], [plan.permissions, 'permissions']] as const) {
         if (file?.before === undefined) continue;
         const backup = path.join(folder, `${id}.${suffix}`);
