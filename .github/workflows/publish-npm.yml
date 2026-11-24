@@ -60,7 +60,8 @@ jobs:
           echo "$EXPECTED_SHA256  pkg/$file" | sha256sum -c -
           tar -xzOf "pkg/$file" package/package.json > pkg/package.json
           node -e "const p=require('./pkg/package.json');if(p.name!==process.env.PACKAGE||p.version!==process.env.VERSION){console.error('包里写的是 '+p.name+'@'+p.version);process.exit(1)}"
-          echo "TARBALL=pkg/$file" >> "$GITHUB_ENV"
+          # 要带 ./：npm 会把 pkg/xxx.tgz 当成 GitHub 的“用户/仓库”简写去拉 git。
+          echo "TARBALL=./pkg/$file" >> "$GITHUB_ENV"
           echo "TARBALL_SHA1=$(sha1sum "pkg/$file" | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
       # 重跑时（例如上次发完、改标签前断了）不重复发布：已有同版本就核对是不是同一个包。
