@@ -22,7 +22,7 @@ saltedfish dashboard
 
 扩展里的“打开管理页”进入当前服务。只有被允许管理的浏览器能直接拿到一次性登录码；普通的浏览器配对只能连接浏览器，没有管理权限。管理页会话空闲 30 分钟、最长 12 小时过期，可以随时注销。
 
-npm 仓库暂时装不上时，从 https://github.com/finmoor/saltedfish/releases 下载同一份包：`npm install -g ./saltedfish-{{version}}.tgz`（依赖仍从 npm 仓库安装）。
+离线或 npm 仓库暂时装不上时，从 https://github.com/finmoor/saltedfish/releases 下载同一份包：`npm install -g ./saltedfish-{{version}}.tgz`，运行依赖已打在包里。
 
 ## 服务监听在哪
 
