@@ -16,7 +16,7 @@ npm install -g saltedfish
 saltedfish install
 ```
 
-npm 仓库暂时装不上新版时（比如镜像还没同步），可以从 [GitHub Releases](https://github.com/finmoor/saltedfish/releases) 下载同一份 `saltedfish-<版本>.tgz`，用附带的 `.sha256` 核对后运行 `npm install -g ./saltedfish-<版本>.tgz`。依赖仍从 npm 仓库安装，之后的 `saltedfish upgrade` 照常从公共 npm 查新版。
+npm 仓库暂时装不上新版时（比如镜像还没同步），可以从 [GitHub Releases](https://github.com/finmoor/saltedfish/releases) 下载同一份 `saltedfish-<版本>.tgz`（页面上每个文件都标着 SHA256，可以先核对），运行 `npm install -g ./saltedfish-<版本>.tgz`。依赖仍从 npm 仓库安装，之后的 `saltedfish upgrade` 照常从公共 npm 查新版。
 
 `npm install` 只安装命令行，不启动后台服务，也不修改客户端配置。`saltedfish install` 创建独立运行快照、初始化并启动服务，输出扩展目录。在交互终端中，它会询问是否接入检测到的 Agent；支持的客户端见[支持的 Agent 客户端](supported-clients.md)。
 

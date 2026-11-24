@@ -57,4 +57,4 @@ CHROME_MCP_DATA_DIR=.local/dev CHROME_MCP_PORT=18422 node dist/cli.js setup
 - 测试里不要写死个人路径、真实账号、真实网站的数据；用环境变量和自建的测试页面。
 - 提交前跑 `npm run typecheck` 和 `npm test`；改到扩展行为的再跑相关的浏览器用例。
 
-提交即表示你同意以 [MIT 许可](LICENSE) 发布你的贡献。By submitting a contribution you agree to license it under the [MIT License](LICENSE).
+提交即表示你同意以 [GNU GPL 3.0 或更高版本](LICENSE) 发布你的贡献。By submitting a contribution you agree to license it under the [GNU GPL v3.0 or later](LICENSE).

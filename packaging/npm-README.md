@@ -82,4 +82,4 @@ saltedfish helper status
 - [名称与兼容](docs/branding.md)
 - 架构、测试、安全报告：https://github.com/finmoor/saltedfish
 
-MIT License.
+按 GNU GPL 3.0 或更高版本发布（GPL-3.0-or-later）。

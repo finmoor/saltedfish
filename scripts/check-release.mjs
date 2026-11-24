@@ -20,8 +20,9 @@ for (const [file, pattern] of [
   ['README.md', /当前版本 \*\*([^*]+)\*\*/],
   ['README.en.md', /Current version: \*\*([^*]+)\*\*/],
 ]) assert.equal((await read(file)).match(pattern)?.[1], pkg.version, `${file} 的当前版本未更新`);
-assert.equal(pkg.license, 'MIT', 'package.json 的 license 应为 MIT');
-assert.match(await read('LICENSE'), /^MIT License\r?\n/, 'LICENSE 缺失或不是 MIT');
+assert.equal(pkg.license, 'GPL-3.0-or-later', 'package.json 的 license 应为 GPL-3.0-or-later');
+assert.equal(lock.packages[''].license, pkg.license, 'package-lock.json 的 license 与 package.json 不一致');
+assert.match(await read('LICENSE'), /^\s*GNU GENERAL PUBLIC LICENSE\r?\n\s*Version 3, 29 June 2007\r?\n/, 'LICENSE 缺失或不是 GPL 3.0');
 for (const file of ['README.md', 'docs/npm.md']) {
   for (const match of (await read(file)).matchAll(/saltedfish-(\d+\.\d+\.\d+(?:-[\w.-]+)?)(?:-windows-x64\.zip|\.tgz)/g)) assert.equal(match[1], pkg.version, `${file} 的当前安装命令过时`);
 }

@@ -9,11 +9,11 @@
   <a href="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml"><img src="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Node.js-24%2B-1d2fe0" alt="Node.js 24+">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1d2fe0" alt="Windows 和 Linux">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1d2fe0" alt="MIT 许可"></a>
+  <a href="#许可"><img src="https://img.shields.io/badge/license-GPL--3.0-1d2fe0" alt="GPL-3.0"></a>
 </p>
 
 <p align="center">
-  <b>中文</b> · <a href="README.en.md">English</a> · <a href="#快速开始">快速开始</a> · <a href="docs/npm.md">安装与运维</a> · <a href="docs/interaction.md">工具语义</a> · <a href="docs/architecture.md">架构</a>
+  <b>中文</b> · <a href="README.en.md">English</a> · <a href="#快速开始">快速开始</a> · <a href="docs/npm.md">安装与运维</a> · <a href="docs/interaction.md">工具语义</a> · <a href="docs/architecture.md">架构</a> · <a href="https://github.com/finmoor/saltedfish/releases">更新记录</a>
 </p>
 
 SaltedFish 是一个不设限的浏览器工具：让任何支持 MCP 的 AI Agent 直接用**你正在用的 Chrome**。Agent 在服务器上，也能操作你电脑上的浏览器。
@@ -92,7 +92,7 @@ saltedfish install
 
 ### 让服务器上的 Agent 操作你电脑上的 Chrome
 
-在 Linux 服务器上运行同样两条命令（默认监听内网 IP 的 18445 端口），再运行 `saltedfish dashboard`。在你的电脑上打开它打印的链接，生成配对码，下载扩展，加载到 Chrome 里并粘贴配对码。扩展也可以从 [Releases](https://github.com/finmoor/saltedfish/releases/latest) 下载（`saltedfish-extension-<版本>.zip`，选和服务同一个版本），解压到固定的文件夹再加载。
+在 Linux 服务器上运行同样两条命令（默认监听内网 IP 的 18445 端口），再运行 `saltedfish dashboard`。在你的电脑上打开它打印的链接，生成配对码，再下载扩展：管理页上直接下载，或者从 [Releases](https://github.com/finmoor/saltedfish/releases/latest) 下载和服务同版本的 `saltedfish-extension-<版本>.zip`。解压到一个不会挪动的文件夹，加载到 Chrome 里，粘贴配对码。
 
 Agent 要和服务装在同一台电脑上。内网用的是不加密的 HTTP，跨公网要配证书，见 [安装与运维](docs/npm.md)。
 
@@ -206,6 +206,7 @@ Agent 连服务的 MCP 入口，扩展主动连服务，服务负责授权、排
 ## 已知限制
 
 - 已在 Windows 和 Linux 上验证；macOS 没有验证分发。
+- 扩展不在 Chrome 应用商店，要开“开发者模式”加载；组织策略禁用了开发者模式的电脑装不上。
 - 不设限说的是 SaltedFish 这个工具；Agent 所用模型和客户端自己的规则、审批不归它管。
 - Chrome 内部页面、其他扩展的页面、系统原生窗口、验证码和系统授权对话框没有自动化保证。
 - 网页能观察到 DOM 和输入事件；不承诺网站识别不出自动化操作。
@@ -232,4 +233,4 @@ npm test
 
 ## 许可
 
-[MIT](LICENSE)。第三方依赖的许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Copyright © 2026 Finn。按 [GNU GPL 3.0](LICENSE) 或更高版本发布：可以自由使用、修改和再分发；分发修改过的版本或基于它开发的软件时，必须同样以 GPL 开源并提供源代码。第三方依赖的许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

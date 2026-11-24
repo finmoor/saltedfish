@@ -9,11 +9,11 @@
   <a href="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml"><img src="https://github.com/finmoor/saltedfish/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Node.js-24%2B-1d2fe0" alt="Node.js 24+">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1d2fe0" alt="Windows and Linux">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1d2fe0" alt="MIT license"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-GPL--3.0-1d2fe0" alt="GPL-3.0"></a>
 </p>
 
 <p align="center">
-  <a href="README.md">中文</a> · <b>English</b> · <a href="#quick-start">Quick start</a> · <a href="#how-it-works">How it works</a> · <a href="#security-and-data">Security</a> · <a href="#known-limitations">Limitations</a>
+  <a href="README.md">中文</a> · <b>English</b> · <a href="#quick-start">Quick start</a> · <a href="#how-it-works">How it works</a> · <a href="#security-and-data">Security</a> · <a href="#known-limitations">Limitations</a> · <a href="https://github.com/finmoor/saltedfish/releases">Releases</a>
 </p>
 
 SaltedFish is an unrestricted browser tool: any AI agent that speaks MCP can use **the Chrome you already use**, even when the agent runs on a server.
@@ -94,7 +94,7 @@ saltedfish install
 
 ### Agents on a server, Chrome on your desk
 
-Run the same two commands on a Linux server (it listens on the LAN IP, port 18445 by default), then `saltedfish dashboard`. Open the link it prints on your own computer, create a pairing code, download the extension, load it into Chrome and paste the code. You can also get the extension from [Releases](https://github.com/finmoor/saltedfish/releases/latest) (`saltedfish-extension-<version>.zip`, same version as the service); unzip it into a folder that will stay put, then load it.
+Run the same two commands on a Linux server (it listens on the LAN IP, port 18445 by default), then `saltedfish dashboard`. Open the link it prints on your own computer, create a pairing code, then get the extension: download it from the dashboard, or take `saltedfish-extension-<version>.zip` for the same version as the service from [Releases](https://github.com/finmoor/saltedfish/releases/latest). Unzip it into a folder that will stay put, load it into Chrome and paste the code.
 
 Agents must run on the same machine as the service. A LAN uses plain HTTP; add a certificate to cross the public internet. See the [install guide](docs/npm.md) (Chinese).
 
@@ -208,6 +208,7 @@ See [PRIVACY.md](PRIVACY.md). Please report vulnerabilities privately as describ
 ## Known limitations
 
 - Verified on Windows and Linux; macOS distribution is not verified.
+- The extension is not on the Chrome Web Store; it is loaded in Developer mode, so it cannot be installed where an organization policy turns Developer mode off.
 - "Unrestricted" describes SaltedFish as a tool. The rules and approvals of the model and client behind an agent are not its to change.
 - No automation guarantees for Chrome internal pages, other extensions' pages, native OS windows, CAPTCHAs or OS permission dialogs.
 - Web pages can observe the DOM and input events; SaltedFish does not promise that sites cannot tell automation apart from a person.
@@ -228,4 +229,4 @@ npm test
 
 ## License
 
-[MIT](LICENSE). Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Copyright © 2026 Finn. Released under the [GNU GPL v3.0](LICENSE) or any later version: you may use, modify and redistribute it freely; if you distribute a modified version, or software built on it, it must also be open source under the GPL with its source code available. Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
