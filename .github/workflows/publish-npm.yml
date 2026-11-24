@@ -1,0 +1,91 @@
+# 把已经冻结、挂在 GitHub Release 上的 npm 包发到公共 npm。
+# 不重新构建：门禁在维护者电脑上对同一个 tgz 跑完（见 docs/testing.md“发行前”），这里只核对哈希后原样发布。
+# 认证走 npm 的 trusted publishing（OIDC），不存令牌；npmjs.com 上 saltedfish 的 Trusted publishing 要登记本文件名，
+# 并允许 npm publish 和 npm dist-tag。
+name: Publish npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本号，例如 0.3.31；Release v<版本> 上要有 saltedfish-<版本>.tgz
+        required: true
+        type: string
+      sha256:
+        description: 冻结包的 SHA256（release/saltedfish-<版本>.tgz.sha256）
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ inputs.version }}
+      EXPECTED_SHA256: ${{ inputs.sha256 }}
+      PACKAGE: saltedfish
+      # 包是在维护者电脑上构建的，不是这次运行构建的；npm 默认生成的来源证明会把它记成本次运行、本提交的构建产物，所以关掉。
+      NPM_CONFIG_PROVENANCE: 'false'
+    steps:
+      - name: 核对输入
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "版本号格式不对：$VERSION"; exit 1; }
+          [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'SHA256 要是 64 位小写十六进制'; exit 1; }
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      # dist-tag 走 OIDC 要 npm 11.21.0 以上。
+      - name: 固定 npm 版本
+        run: npm install -g npm@11.21.2 && npm --version
+
+      - name: 下载冻结包并核对
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          file="$PACKAGE-$VERSION.tgz"
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "$file" --dir pkg
+          echo "$EXPECTED_SHA256  pkg/$file" | sha256sum -c -
+          tar -xzOf "pkg/$file" package/package.json > pkg/package.json
+          node -e "const p=require('./pkg/package.json');if(p.name!==process.env.PACKAGE||p.version!==process.env.VERSION){console.error('包里写的是 '+p.name+'@'+p.version);process.exit(1)}"
+          echo "TARBALL=pkg/$file" >> "$GITHUB_ENV"
+          echo "TARBALL_SHA1=$(sha1sum "pkg/$file" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      # 重跑时（例如上次发完、改标签前断了）不重复发布：已有同版本就核对是不是同一个包。
+      - name: 发布
+        run: |
+          published="$(npm view "$PACKAGE@$VERSION" dist.shasum 2>/dev/null || true)"
+          if [ -z "$published" ]; then
+            npm publish "$TARBALL" --tag beta --access public
+          elif [ "$published" = "$TARBALL_SHA1" ]; then
+            echo "npm 上已经有同一个 $PACKAGE@$VERSION，跳过发布"
+          else
+            echo "npm 上的 $PACKAGE@$VERSION 和冻结包不是同一个（$published）"; exit 1
+          fi
+
+      - name: 指向 latest
+        run: npm dist-tag add "$PACKAGE@$VERSION" latest
+
+      - name: 读回核对
+        run: |
+          for attempt in $(seq 1 30); do
+            tags="$(npm view "$PACKAGE" dist-tags --json 2>/dev/null || true)"
+            if node -e "const t=JSON.parse(process.argv[1]||'{}');process.exit(t.latest===process.env.VERSION&&t.beta===process.env.VERSION?0:1)" "$tags"; then break; fi
+            [ "$attempt" = 30 ] && { echo "标签还没生效：$tags"; exit 1; }
+            sleep 20
+          done
+          mkdir -p check && (cd check && npm pack "$PACKAGE@$VERSION" --silent > /dev/null)
+          echo "$EXPECTED_SHA256  check/$PACKAGE-$VERSION.tgz" | sha256sum -c -
+          echo "$tags"

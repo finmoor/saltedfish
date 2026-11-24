@@ -63,4 +63,4 @@ node --import tsx --test tests/interaction-feedback-1108.integration.ts
 
 ## 发行前
 
-维护者发版时，同一个候选包要依次通过类型检查、单元、管理页、浏览器、性能五组（`npm run verify:release`），再在 Windows 和 Linux 上各跑一次 `npm run test:npm`，最后 `npm run release:npm` 核对证据、冻结发行包。这套流程绑定候选包哈希和源码指纹，构建后源码有任何变化都要重新出候选。
+维护者发版时，同一个候选包要依次通过类型检查、单元、管理页、浏览器、性能五组（`npm run verify:release`），再在 Windows 和 Linux 上各跑一次 `npm run test:npm`，最后 `npm run release:npm` 核对证据、冻结发行包。这套流程绑定候选包哈希和源码指纹，构建后源码有任何变化都要重新出候选。冻结的包挂到 GitHub Release `v<版本>` 后，由 `.github/workflows/publish-npm.yml`（手动触发，输入版本号和 SHA256）核对哈希、原样发到 npm 并指向 `latest`，认证用 npm 的 trusted publishing，不存令牌。
