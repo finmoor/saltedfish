@@ -6,7 +6,7 @@ SaltedFish 由一个服务和 Chrome 扩展组成。Agent 通过 MCP 调用服�
 
 - Node.js 24 或更新版本。
 - Windows、Linux 已验证安装与运行；macOS 未验证分发。
-- Chrome 及加载扩展的权限。当前可使用开发者模式加载；Chrome 应用商店上架准备中。
+- Chrome，并允许用开发者模式加载扩展。扩展暂不上架 Chrome 应用商店：随服务安装，也可以从 [GitHub Releases](https://github.com/finmoor/saltedfish/releases) 下载。
 - Agent 和 SaltedFish 服务必须在同一台电脑上。Chrome 扩展可以在其他电脑上连接服务。
 
 ## 安装
@@ -15,6 +15,8 @@ SaltedFish 由一个服务和 Chrome 扩展组成。Agent 通过 MCP 调用服�
 npm install -g saltedfish
 saltedfish install
 ```
+
+npm 仓库暂时装不上新版时（比如镜像还没同步），可以从 [GitHub Releases](https://github.com/finmoor/saltedfish/releases) 下载同一份 `saltedfish-<版本>.tgz`，用附带的 `.sha256` 核对后运行 `npm install -g ./saltedfish-<版本>.tgz`。依赖仍从 npm 仓库安装，之后的 `saltedfish upgrade` 照常从公共 npm 查新版。
 
 `npm install` 只安装命令行，不启动后台服务，也不修改客户端配置。`saltedfish install` 创建独立运行快照、初始化并启动服务，输出扩展目录。在交互终端中，它会询问是否接入检测到的 Agent；支持的客户端见[支持的 Agent 客户端](supported-clients.md)。
 
@@ -32,7 +34,7 @@ saltedfish connect --clients codex,opencode --trust-browser
 
 1. 运行 `saltedfish dashboard`，打开管理页。
 2. 在“浏览器”页输入名称，为每个 Chrome 配置分别生成配对码。是否允许该浏览器直接打开已登录管理页，单独选择。
-3. 在对应 Chrome 配置打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”。服务与 Chrome 同机时，选择安装命令输出的扩展目录；不在同机时，从管理页下载扩展并解压到固定目录。
+3. 在对应 Chrome 配置打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”。服务与 Chrome 同机时，选择安装命令输出的扩展目录；不在同机时，从管理页下载扩展，或从 GitHub Releases 下载同版本的 `saltedfish-extension-<版本>.zip`，解压到固定目录。Releases 里的 ZIP 不带服务地址，粘贴配对码时一并填上。
 4. 打开 SaltedFish 扩展，粘贴配对码并连接。回到管理页确认该浏览器在线。
 5. 接入 Agent，重载客户端的 MCP 连接，再明确选择浏览器和标签页开始操作。
 
@@ -41,6 +43,8 @@ saltedfish connect --clients codex,opencode --trust-browser
 手动加载后保持扩展文件夹路径固定。换文件夹或移除重装会丢失原扩展存储；在管理页原浏览器的离线卡片点“重新连接”，用新配对码恢复原身份、名称、授权和记录。
 
 需要导出 Chrome 下载文件时，可在 Chrome 所在的 Windows 电脑安装可选文件助手：`saltedfish helper install --extension-dir DIR`，其中 `DIR` 是实际加载的扩展目录。助手只在明确请求时读取对应下载文件，安装助手不启动浏览器服务。
+
+Windows 上扩展设置页的“打开管理页”只认安装命令输出的扩展目录。同一台电脑上改用其他目录（比如 Releases 的 ZIP 解压出来的）时，它会先进登录页；运行 `saltedfish desktop register --extension-dir DIR` 登记这个目录后可以直接进入。
 
 ## Linux 服务器部署
 

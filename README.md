@@ -92,7 +92,7 @@ saltedfish install
 
 ### 让服务器上的 Agent 操作你电脑上的 Chrome
 
-在 Linux 服务器上运行同样两条命令（默认监听内网 IP 的 18445 端口），再运行 `saltedfish dashboard`。在你的电脑上打开它打印的链接，生成配对码，下载扩展，加载到 Chrome 里并粘贴配对码。
+在 Linux 服务器上运行同样两条命令（默认监听内网 IP 的 18445 端口），再运行 `saltedfish dashboard`。在你的电脑上打开它打印的链接，生成配对码，下载扩展，加载到 Chrome 里并粘贴配对码。扩展也可以从 [Releases](https://github.com/finmoor/saltedfish/releases/latest) 下载（`saltedfish-extension-<版本>.zip`，选和服务同一个版本），解压到固定的文件夹再加载。
 
 Agent 要和服务装在同一台电脑上。内网用的是不加密的 HTTP，跨公网要配证书，见 [安装与运维](docs/npm.md)。
 

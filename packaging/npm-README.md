@@ -16,13 +16,13 @@ saltedfish dashboard
 
 `install` 启动服务、接入检测到的本机 Agent（`--no-connect` 跳过，之后随时可以 `saltedfish connect`）。Linux 服务器要开机自动启动，安装时选上，或之后运行 `saltedfish autostart on`。
 
-在管理页的“浏览器”里给每个 Chrome 配置生成配对码，下载扩展 ZIP 并解压，在 `chrome://extensions` 开启开发者模式、“加载已解压的扩展程序”选这个目录，再把配对码粘贴到扩展设置里。每个 Chrome 配置单独配对，名称、网站登录和浏览器身份由 Chrome 自己保存。
+在管理页的“浏览器”里给每个 Chrome 配置生成配对码，下载扩展 ZIP（也可以从 GitHub Releases 下载 `saltedfish-extension-{{version}}.zip`）并解压，在 `chrome://extensions` 开启开发者模式、“加载已解压的扩展程序”选这个目录，再把配对码粘贴到扩展设置里。每个 Chrome 配置单独配对，名称、网站登录和浏览器身份由 Chrome 自己保存。
 
 在“Agent 连接”里给 Agent 新建授权，选允许它用哪些浏览器。`/mcp` 只接受服务所在电脑上的连接；别的电脑上的 Agent 要在那台电脑上另装服务。Claude Desktop 用自带的 stdio→HTTP 桥接，其余客户端用 HTTP 直连。各客户端的配置位置和审批见 [支持的 Agent](docs/supported-clients.md) 和 [各客户端的配置细节](docs/client-compatibility.md)。
 
 扩展里的“打开管理页”进入当前服务。只有被允许管理的浏览器能直接拿到一次性登录码；普通的浏览器配对只能连接浏览器，没有管理权限。管理页会话空闲 30 分钟、最长 12 小时过期，可以随时注销。
 
-离线安装：`npm install -g ./saltedfish-{{version}}.tgz`。
+npm 仓库暂时装不上时，从 https://github.com/finmoor/saltedfish/releases 下载同一份包：`npm install -g ./saltedfish-{{version}}.tgz`（依赖仍从 npm 仓库安装）。
 
 ## 服务监听在哪
 

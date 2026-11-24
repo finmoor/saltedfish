@@ -94,7 +94,7 @@ saltedfish install
 
 ### Agents on a server, Chrome on your desk
 
-Run the same two commands on a Linux server (it listens on the LAN IP, port 18445 by default), then `saltedfish dashboard`. Open the link it prints on your own computer, create a pairing code, download the extension, load it into Chrome and paste the code.
+Run the same two commands on a Linux server (it listens on the LAN IP, port 18445 by default), then `saltedfish dashboard`. Open the link it prints on your own computer, create a pairing code, download the extension, load it into Chrome and paste the code. You can also get the extension from [Releases](https://github.com/finmoor/saltedfish/releases/latest) (`saltedfish-extension-<version>.zip`, same version as the service); unzip it into a folder that will stay put, then load it.
 
 Agents must run on the same machine as the service. A LAN uses plain HTTP; add a certificate to cross the public internet. See the [install guide](docs/npm.md) (Chinese).
 
