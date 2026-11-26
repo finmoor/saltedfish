@@ -7,27 +7,46 @@ interface Job { commandId: string; deadline: number; valid: () => boolean; rejec
 export class Dialogs {
   private open = new Map<number, Dialog>();
   private jobs = new Map<number, Job>();
+  // chrome_action 带了 beforeUnload:"accept"：动作期间和结束后一小段时间里，这个标签页的下一个“确定离开吗”直接答离开，只认 beforeunload，用一次就作废。
+  // 页面常在动作返回之后才弹（先发请求、回来再跳转或关窗口），只管动作期间就接不住。
+  private leaveUntil = new Map<number, number>();
+  private leftAt = new Map<number, number>();
   constructor(private handle: (tabId: number, args: JsonObject, sessionId?: string) => Promise<unknown>) {}
   has(tabId: number) { return this.open.has(tabId); }
+  current(tabId: number): Readonly<Dialog> | undefined { return this.open.get(tabId); }
+  allowLeave(tabId: number, until: number) { if (until > Date.now()) this.leaveUntil.set(tabId, until); else this.leaveUntil.delete(tabId); }
+  // 动作结束：还没用掉的授权只再留一小段，接住随后才弹的框。
+  narrowLeave(tabId: number, graceMs: number) { if (this.leaveUntil.has(tabId)) this.allowLeave(tabId, Date.now() + graceMs); }
+  // 最近一次按 allowLeave 答“离开”的时间；动作结果据此写 beforeUnload:"accepted"。
+  leftSince(tabId: number, since: number) { return (this.leftAt.get(tabId) ?? 0) >= since; }
   arm(tabId:number) {const job=this.jobs.get(tabId);if(job?.policy)job.policyArmed=true;}
   progress(tabId:number,index:number,results:unknown[]) {const job=this.jobs.get(tabId);if(job)job.progress={index,results};}
   interrupted(tabId:number) {return !!this.jobs.get(tabId)?.interrupted;}
   interruptedBatch(tabId:number,error:BrowserError) {const p=this.jobs.get(tabId)?.progress;return {completed:false,failedIndex:p?.index??0,results:p?.results.slice()??[],error:{code:error.code,message:error.message},note:'弹窗已打开，后续步骤停止；用 chrome_dialog 响应，不重复执行已完成步骤。'};}
   assert(tabId: number) { if (this.jobs.get(tabId)?.interrupted) throw new BrowserError('DIALOG_OPEN', '本次操作因弹窗停止，后续步骤未执行。'); }
   // 关标签页时（答了“离开”或者根本没弹框）标签页随即关掉、调试连接断开，这是预期的结果，不算中断。
-  forget(tabId: number) { const hadDialog=this.open.has(tabId);this.open.delete(tabId); const job=this.jobs.get(tabId); if(job && !(job.leaving && (job.handled || !hadDialog)) && (hadDialog || job.policy)){job.interrupted=true;job.reject(new BrowserError('CONNECTION_CHANGED','弹窗所属调试连接已变化。'));} }
+  forget(tabId: number) { const hadDialog=this.open.has(tabId);this.open.delete(tabId);this.leaveUntil.delete(tabId); const job=this.jobs.get(tabId); if(job && !(job.leaving && (job.handled || !hadDialog)) && (hadDialog || job.policy)){job.interrupted=true;job.reject(new BrowserError('CONNECTION_CHANGED','弹窗所属调试连接已变化。'));} }
   closed(tabId: number) { this.open.delete(tabId); }
   opening(tabId: number, params: JsonObject, sessionId?: string): JsonObject {
     if (this.open.has(tabId)) return { ...params, ...this.open.get(tabId) };
     const job=this.jobs.get(tabId), message=String(params.message || '');
     const dialog: Dialog={dialogId:crypto.randomUUID(),type:String(params.type),message:message.slice(0,2001),messageTruncated:message.length>2001,frameId:typeof params.frameId==='string'?params.frameId:undefined,sessionId,commandId:job?.commandId};
     this.open.set(tabId,dialog);
+    // allowLeave 的授权只认 beforeunload；作业自己声明过的策略优先。
+    const leave=dialog.type==='beforeunload'&&(this.leaveUntil.get(tabId)??0)>Date.now();
     if (job) {
-      const policy=job.policyArmed?job.policy:undefined; job.policy=undefined;job.policyArmed=false; // 只在目标输入即将派发时启用，等待阶段的弹窗不得提前消费授权。
+      const declared=job.policyArmed?job.policy:undefined; job.policy=undefined;job.policyArmed=false; // 只在目标输入即将派发时启用，等待阶段的弹窗不得提前消费授权。
+      // 决定答“离开”时就记下：关窗口时答框的调用可能等不到返回，动作已经收尾，结果里照样写 beforeUnload:"accepted"。
+      if (!declared && leave) { this.leaveUntil.delete(tabId); this.leftAt.set(tabId, Date.now()); }
+      const policy=declared??(leave?{accept:true,expectedType:'beforeunload'}:undefined);
       if (policy && job.valid() && Date.now()<job.deadline && this.matches(dialog,policy)) {
         job.response=Promise.resolve().then(()=>{if(!job.valid() || Date.now()>=job.deadline)throw new BrowserError('CANCELLED','控制已失效，未响应弹窗。');return this.respond(tabId,{...policy,dialogId:dialog.dialogId});}).then(result=>{job.handled={dialogId:dialog.dialogId,type:dialog.type,accept:policy.accept};return result;});
         void job.response.catch(()=>{job.interrupted=true;job.reject(new BrowserError('DIALOG_RESPONSE_FAILED','弹窗响应未确认，停止后续步骤；检查当前弹窗，不重放触发动作。'));});
       } else { job.interrupted=true;job.reject(new BrowserError(policy?'DIALOG_MISMATCH':'DIALOG_OPEN',`页面打开 ${dialog.type} 弹窗（dialogId=${dialog.dialogId}，内容 ${JSON.stringify(dialog.message.slice(0,200))}）。用 chrome_dialog 响应；触发动作不会重试。`)); }
+    } else if (leave) {
+      // 动作已经返回、页面这时才问“确定离开吗”：调用方事先说过直接离开，照答。答不上就留着，chrome_dialog 还能答。
+      this.leaveUntil.delete(tabId); this.leftAt.set(tabId, Date.now());
+      void this.respond(tabId,{accept:true,expectedType:'beforeunload',dialogId:dialog.dialogId}).catch(()=>{});
     }
     return { ...params, ...dialog };
   }

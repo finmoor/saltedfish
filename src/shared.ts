@@ -91,8 +91,11 @@ export const LOCAL_FILE_URL_MESSAGE = '非管理员客户端不能让浏览器�
 interface ValidationIssue { path?: PropertyKey[]; message: string }
 const validationIssues = (error: unknown): ValidationIssue[] | undefined =>
   error instanceof Error && error.name === 'ZodError' && Array.isArray((error as { issues?: unknown }).issues) ? (error as unknown as { issues: ValidationIssue[] }).issues : undefined;
+// 批次、任务的步骤写错了结构（缺 operation 或 args、参数平铺在步骤上）时附一句正确写法：步骤格式和单步工具不一样，最容易写错（11-26 反馈：两周写错 14 次）。
+const STEP_SHAPE_HINT = '每一步写成 {operation, args:{…}}，参数都放进 args，如 {"operation":"page.action","args":{"action":"click","selector":"#ok"}}。';
 export function validationMessage(issues: ValidationIssue[]): string {
-  return clipMessage(issues.map(issue => (issue.path?.length ? issue.path.map(String).join('.') + ': ' : '') + issue.message).join('; ') || '参数无效。', 3000);
+  const stepShape = issues.some(issue => issue.path?.[0] === 'steps' && typeof issue.path[1] === 'number' && (issue.path.length <= 2 || issue.path.length === 3 && ['operation', 'args'].includes(String(issue.path[2]))));
+  return clipMessage((issues.map(issue => (issue.path?.length ? issue.path.map(String).join('.') + ': ' : '') + issue.message).join('; ') || '参数无效。') + (stepShape ? ` ${STEP_SHAPE_HINT}` : ''), 3000);
 }
 
 export function errorInfo(error: unknown): ErrorInfo {
@@ -193,6 +196,7 @@ export const CAPABILITY = {
   screenshotV3:'screenshot-v3',
   interactionV9:'interaction-v9',
   interactionV10:'interaction-v10',
+  interactionV11:'interaction-v11',
   initScriptV1:'init-script-v1',
   storeBuild:'store-build',
 } as const;
@@ -208,9 +212,11 @@ const C = CAPABILITY;
 // interaction-v9：条件的 textMatches（正则）、chrome_action 的 postcondition。旧扩展会忽略这两个字段：只给 textMatches 的等待立刻算成立，动作不核对就报成功，所以用到时才要求。
 // interaction-v10：locator.inside、条件的 state:"attached"。旧扩展会忽略 inside 在整页里找（可能点到范围外的同名元素），attached 当成 visible 一直等，所以用到时才要求。
 //   同版扩展还会：上传的目标不是文件框时用它里面或最近的文件框，按坐标点击的结果带点中的元素，整页截图标出固定元素画在哪；这几样旧扩展只是没有，不用判断。
+// interaction-v11：chrome_action 的 beforeUnload、chrome_find 的 at 和 cell。旧扩展会忽略它们：动作照常执行、页面问“确定离开吗”就停下，find 在整页里找，所以用到时才要求。
+//   这是握手能力的第 30 个（服务最多收 30 个，http-server.ts）；之后的新语义要并进已有能力或先调高服务端上限、等旧服务退场。
 // init-script-v1：navigate、new_tab 的 initScript（新文档加载前在主世界执行的脚本）。旧扩展会忽略它照常导航，钩子没装上调用方也不知道，所以用到时才要求。
 // evaluate-v2：evaluate 支持 replMode。screenshot-v2：元素截图和 clip。downloads-v2：下载带来源标签页、等标签页的下一次下载、按站点设置自动下载。tab-keep-v1：标签页不被自动丢弃。旧扩展会忽略这些参数照旧执行或不认识操作，所以只在请求用到时才要求。
-export const EXTENSION_CAPABILITIES: readonly Capability[] = [C.semanticLocators, C.structuredWait, C.popupWait, C.pauseControl, C.activity, C.dialogControl, C.elementStateV2, C.frameCoordinatesV2, C.executionV3, C.interactionV4, C.interactionV5, C.adminOriginV1, C.interactionV6, C.interactionV7,C.fileContentV1,C.browserFileReadV1, C.readOnlyEvalV1, C.selfUpdateV1, C.tabGroupsV1, C.evaluateV2, C.screenshotV2, C.downloadsV2, C.tabKeepV1, C.interactionV8, C.sitePermissionV2, C.screenshotV3, C.interactionV9, C.initScriptV1, C.interactionV10];
+export const EXTENSION_CAPABILITIES: readonly Capability[] = [C.semanticLocators, C.structuredWait, C.popupWait, C.pauseControl, C.activity, C.dialogControl, C.elementStateV2, C.frameCoordinatesV2, C.executionV3, C.interactionV4, C.interactionV5, C.adminOriginV1, C.interactionV6, C.interactionV7,C.fileContentV1,C.browserFileReadV1, C.readOnlyEvalV1, C.selfUpdateV1, C.tabGroupsV1, C.evaluateV2, C.screenshotV2, C.downloadsV2, C.tabKeepV1, C.interactionV8, C.sitePermissionV2, C.screenshotV3, C.interactionV9, C.initScriptV1, C.interactionV10, C.interactionV11];
 // Chrome 应用商店版（extension/build-target.ts）由商店更新：不声明 self-update-v1，改声明 store-build，管理页据此提示从应用商店更新。数量不变，旧服务也接受（只校验字符串和个数）。
 export function extensionCapabilities(store:boolean):Capability[]{return store?[...EXTENSION_CAPABILITIES.filter(item=>item!==C.selfUpdateV1),C.storeBuild]:[...EXTENSION_CAPABILITIES];}
 // 扩展要求服务具备的能力：缺任何一项，扩展拒绝执行动作（SERVICE_UPDATE_REQUIRED）。

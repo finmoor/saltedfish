@@ -13,7 +13,12 @@ interface GroupRecord {
   tabs: number[];
   // 用户原来的标签页被接管时的位置，释放时放回去。Agent 自己开的标签页不在这里。
   origins: Record<string, Origin>;
+  // 这些页面打开、却没能移进组的标签页（弹出窗口、固定的、在别的窗口），和按 opener 认定过的：认定一次就记下，之后 Chrome 清掉 opener 也还算。
+  opened?: number[];
 }
+const MAX_OPENED = 200;
+const remember = (record: GroupRecord, tabId: number) => { record.opened = [...without(record.opened ?? [], tabId), tabId].slice(-MAX_OPENED); };
+const owns = (record: GroupRecord, tabId: number) => record.tabs.includes(tabId) || !!record.opened?.includes(tabId);
 // 用户从组里拖走的标签页，算收回：Agent 不能写也不能再接管，拖回来就恢复。不放在组记录里：最后一个标签页被拖走时组就没了，收回不能跟着没。
 const RETURNED = 'agentReturned';
 type Returned = Record<string, number[]>;
@@ -156,7 +161,7 @@ function list() {
       const members = tabs.filter(tab => tab.groupId === record.groupId), ids = new Set(members.map(tab => tab.id));
       const group = await chrome.tabGroups.get(record.groupId).catch(() => undefined);
       // 弹窗进不了组，按打开它的标签页算到这个组：OAuth 窗口也是这次工作的一部分。
-      const popups = tabs.filter(tab => tab.groupId === UNGROUPED && tab.openerTabId !== undefined && ids.has(tab.openerTabId) && !ids.has(tab.id));
+      const popups = tabs.filter(tab => !ids.has(tab.id) && (tab.groupId === UNGROUPED && tab.openerTabId !== undefined && ids.has(tab.openerTabId) || tab.id !== undefined && !!record.opened?.includes(tab.id)));
       const view = (tab: chrome.tabs.Tab, popup: boolean) => ({ tabId: tab.id, title: tab.title || '', active: tab.active, ...(popup ? { popup: true } : {}) });
       return { groupId: record.groupId, windowId: record.windowId, owner: record.owner, agentId: record.agentId, title: record.title, startedAt: record.startedAt, color: group?.color, tabs: [...members.map(tab => view(tab, false)), ...popups.map(tab => view(tab, true))] };
     }));
@@ -176,7 +181,11 @@ function check(tabId: number, owner: string) {
     const records = await stored(), tab = await chrome.tabs.get(tabId).catch(() => undefined);
     if (!tab) return { missing: true };
     const mine = records.filter(item => item.owner === owner), opener = tab.openerTabId;
-    const member = mine.some(item => item.groupId === tab.groupId && item.tabs.includes(tabId) || opener !== undefined && item.tabs.includes(opener));
+    const recorded = mine.some(item => item.groupId === tab.groupId && item.tabs.includes(tabId) || !!item.opened?.includes(tabId));
+    const byOpener = recorded || opener === undefined ? undefined : mine.find(item => owns(item, opener));
+    const member = recorded || !!byOpener;
+    // 按 opener 认出来的记下来：Chrome 之后可能清掉 opener（用户切换标签页时），记下来就不再依赖它。
+    if (byOpener) { remember(byOpener, tabId); await save(records); }
     const holder = records.find(item => item.owner !== owner && item.groupId === tab.groupId && item.tabs.includes(tabId))?.owner;
     // 原来属于哪个已经结束的会话：服务据此决定能不能直接接回，或在报错里写明。
     const ended = member || holder ? undefined : (await loadEnded()).findLast(item => item.tabs.some(entry => entry.tabId === tabId));
@@ -206,6 +215,23 @@ function groupChanged(tabId: number, groupId: number, released: (owner: string, 
     if (left || entered) { await save(records); await saveReturned(returned); }
   });
 }
+// 本会话标签页里的页面打开的新标签页（按 Page.windowOpen 配上的，opened-tabs.ts）：直接算这个会话的。
+// 同窗口的普通标签页移进组，Chrome 照错的 opener 放进了用户的组也移过来；弹出窗口、别的会话组里的、固定的不移，只记在 opened 里。
+export function adoptOpened(tabId: number, opener: number) {
+  return serial(async () => {
+    const records = await stored(), record = records.find(item => owns(item, opener));
+    if (!record || owns(record, tabId)) return { adopted: false };
+    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+    if (!tab) return { adopted: false };
+    const otherSession = tab.groupId !== UNGROUPED && records.some(item => item !== record && item.groupId === tab.groupId);
+    const movable = !tab.pinned && !otherSession && tab.windowId === record.windowId && (await chrome.windows.get(tab.windowId).catch(() => undefined))?.type === 'normal';
+    const grouped = tab.groupId === record.groupId || movable && await whenEditable(() => chrome.tabs.group({ tabIds: [tabId], groupId: record.groupId })).then(() => true, () => false);
+    if (grouped) record.tabs = [...without(record.tabs, tabId), tabId]; else remember(record, tabId);
+    await save(records);
+    return { adopted: true, grouped };
+  });
+}
+
 export function attachGroupEvents(released: (owner: string, tabIds: number[]) => void) {
   chrome.tabs.onUpdated.addListener((tabId, change) => { if (change.groupId !== undefined) void groupChanged(tabId, change.groupId, released).catch(() => {}); });
 }

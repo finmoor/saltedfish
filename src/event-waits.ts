@@ -178,7 +178,19 @@ export async function waitForDownload(source: DownloadWaitSource, profileId: str
 export interface TabDownloadWaitSource extends DownloadWaitSource {
   // 网站当前的自动下载设置（allow/ask/block），超时时用来判断是不是被 Chrome 拦了；查不到返回 undefined。
   automaticDownloads?(): Promise<string | undefined>;
+  // 这个标签页现在的网址：认来源不明的下载时比对是不是同一个网站。查不到返回 undefined。
+  tabUrl?(): Promise<string | undefined>;
 }
+// 来源不明的下载（扩展没配上来源标签页：页面在新窗口、子 frame 里开始的下载，或拿到接口结果后才开链接）是不是这个网站的：同源，或主机名相同、互为子域。
+function sameSite(a: string, b: string | undefined) {
+  try {
+    const x = new URL(a), y = new URL(b || '');
+    if (x.origin === y.origin || x.hostname === y.hostname) return true;
+    return x.hostname.endsWith('.' + y.hostname) || y.hostname.endsWith('.' + x.hostname);
+  } catch { return false; }
+}
+const fileOf = (event: BrowserEvent) => String(event.params.filename || event.params.url || '').split(/[\\/?]/).filter(Boolean).at(-1)?.slice(0, 60) ?? '';
+const downloadView = (event: BrowserEvent) => ({ id: event.params.id, ...(event.params.filename ? { filename: event.params.filename } : {}), url: String(event.params.url || '').slice(0, 160), ...(event.tabId !== undefined ? { tabId: event.tabId } : {}) });
 // 点击和开始等待之间下载可能已经开始，不给游标时往回认 15 秒。
 const RECENT_DOWNLOAD_MS = 15000;
 
@@ -188,7 +200,12 @@ export async function waitForTabDownload(source: TabDownloadWaitSource, profileI
     const earlier = source.snapshot(profileId, undefined, 0).events.filter(event => Date.parse(event.time) < Date.now() - RECENT_DOWNLOAD_MS).at(-1);
     return earlier?.sequence ?? 0;
   })();
-  let downloadId: number | undefined, sequence = 0;
+  let downloadId: number | undefined, sequence = 0, inferred = false, site: string | undefined | null = null;
+  // 来源不明、和这个标签页同一个网站的下载（等待期间只有一笔时才认）：扩展配不上来源时，这个标签页的下载就落在这里（11-26 反馈：文件下好了却报没开始下载）。
+  const strays = async () => {
+    if (site === null) site = await source.tabUrl?.().catch(() => undefined);
+    return source.snapshot(profileId, undefined, floor).events.filter(item => item.method === 'downloads.created' && item.tabId === undefined && typeof item.params.id === 'number' && sameSite(String(item.params.url || ''), site ?? undefined));
+  };
   try {
     return await watch(source, profileId, undefined, deadline, 'DOWNLOAD_WAIT_TIMEOUT', async event => {
       if (downloadId === undefined) {
@@ -196,7 +213,8 @@ export async function waitForTabDownload(source: TabDownloadWaitSource, profileI
         // 和 waitForResponse 一样先确认游标有效、历史没丢：首笔下载事件被缓存淘汰时，剩下的第二笔不能当成“下一次下载”。
         if (floor > snapshot.latestSequence) throw fail('EVENT_CURSOR_INVALID', '事件游标超出当前事件序列；服务可能已重启，请重新取游标。没有重新触发下载。');
         if (snapshot.droppedBefore > 0 && floor < snapshot.droppedBefore - 1) throw fail('EVENT_HISTORY_LOST', '等待所需的下载事件已超出缓存；无法可靠判断哪一笔是下一次下载，请用 chrome_downloads 核对实际下载，不要重新触发。');
-        const created = snapshot.events.find(item => item.method === 'downloads.created' && typeof item.params.id === 'number');
+        let created = snapshot.events.find(item => item.method === 'downloads.created' && typeof item.params.id === 'number');
+        if (!created) { const guesses = await strays(); if (guesses.length === 1) { created = guesses[0]; inferred = true; } }
         // 还没认定哪一笔下载时，目标标签页被关掉就没有下一次下载了；已认定的下载继续等它完成。不整体绑定 tabId，免得 debugger.detached 之类误中止下载等待。
         if (!created) {
           if (snapshot.events.some(item => item.method === 'tabs.removed')) throw fail('TAB_NOT_FOUND', '等待期间目标标签页已关闭，不会有这个标签页的新下载；不会重新接管。');
@@ -205,7 +223,7 @@ export async function waitForTabDownload(source: TabDownloadWaitSource, profileI
         downloadId = Number(created.params.id); sequence = created.sequence;
       } else if (event && !(event.method === 'downloads.changed' && event.params.id === downloadId)) return undefined;
       const result = await finishedDownload(source, downloadId);
-      return result && { ...result, tabId, sequence };
+      return result && { ...result, tabId, sequence, ...(inferred ? { attribution: 'inferred', note: '这笔下载没配上来源标签页，按“等待期间同一个网站只有这一笔”认定的；文件不对就用 chrome_downloads 核对。' } : {}) };
     });
   } catch (error) {
     if (!(error instanceof BrowserError) || error.code !== 'DOWNLOAD_WAIT_TIMEOUT') throw error;
@@ -214,13 +232,16 @@ export async function waitForTabDownload(source: TabDownloadWaitSource, profileI
     const history = source.snapshot(profileId, tabId, 0), console = consoleProblems(source.snapshot(profileId, tabId, floor).events);
     // droppedBefore 是缓存里最早一条的序号（从 1 起），大于 1 说明更早的事件已经丢了，没法确定没下载过。
     const seen = history.events.some(event => event.method === 'downloads.created'), downloadedBefore = seen || history.droppedBefore > 1;
+    // 这段时间开始、没配上来源标签页的下载一并列出：常常就是这次的，只是没认到这个标签页上。配到别的标签页的不算。
+    const unknown = source.snapshot(profileId, undefined, floor).events.filter(event => event.method === 'downloads.created' && event.tabId === undefined).slice(-5);
     const setting = downloadedBefore ? await source.automaticDownloads?.().catch(() => undefined) : undefined;
     const reasons = [
       ...(setting && setting !== 'allow' ? [`这个标签页之前${seen ? '' : '可能'}下载过，网站的自动下载设置是 ${setting}：第二个起的下载会被 Chrome 拦下、等用户在地址栏点允许，工具看不到被拦的下载。可以用 chrome_site_permission 设成 allow 后再触发。`] : []),
       ...(console.length ? [`这段时间页面报了错：${console.map(text => JSON.stringify(text)).join('；')}。`] : []),
       '页面要是等接口返回才打开下载链接，Chrome 会当弹窗拦下（chrome_site_permission 的 popups 可设 allow）；也可能接口根本没给文件，用 chrome_wait_response 看导出接口的返回。',
     ];
-    throw new BrowserError('DOWNLOAD_WAIT_TIMEOUT', `等待期间这个标签页没有开始新的下载。${reasons.join('')}没有重新触发下载。`, { ...NOT_DISPATCHED, detail: { downloadedBefore, ...(setting ? { automaticDownloads: setting } : {}), ...(console.length ? { console } : {}) } });
+    const lead = unknown.length ? `等待期间有 ${unknown.length} 笔下载没配上来源标签页（${unknown.map(event => JSON.stringify(fileOf(event))).join('、')}），${unknown.length > 1 ? '分不清哪笔是这个标签页的' : '和这个标签页不是同一个网站'}；用 chrome_downloads 核对，可能就是这次的。` : '等待期间这个标签页没有开始新的下载。';
+    throw new BrowserError('DOWNLOAD_WAIT_TIMEOUT', `${lead}${unknown.length ? '' : reasons.join('')}没有重新触发下载。`, { ...NOT_DISPATCHED, detail: { downloadedBefore, ...(setting ? { automaticDownloads: setting } : {}), ...(console.length ? { console } : {}), ...(unknown.length ? { recentDownloads: unknown.map(downloadView) } : {}) } });
   }
 }
 

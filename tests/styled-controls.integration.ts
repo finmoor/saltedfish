@@ -51,8 +51,8 @@ test('S18-01 styled native controls and semantic checked conditions',async t=>{
  });
  await t.test('vanishing skin during held input cancels without replay',async()=>{
   const {page,raw,call}=await h.open();await page.$eval('#styled',e=>e.addEventListener('mousedown',()=>setTimeout(()=>e.parentElement!.querySelector('.skin')!.remove(),20),{once:true}));
-  const r=await raw('chrome_action',{action:'click',selector:'#styled',holdMs:120,autoWait:false});assert.equal(r.error?.code,'ELEMENT_NOT_VISIBLE');assert.equal(r.error?.outcome,'unknown');
-  assert.equal(await page.$eval('#styled',checkedValue),false);await call('chrome_recover_tab');await page.close();
+  const r=await raw('chrome_action',{action:'click',selector:'#styled',holdMs:120,autoWait:false});assert.equal(r.error?.code,'ELEMENT_NOT_VISIBLE');assert.equal(r.error?.outcome,'dispatched','按下已经发出：不是未派发，也不再按结果不明暂停');
+  assert.equal(await page.$eval('#styled',checkedValue),false);assert.equal(await call('chrome_evaluate',{expression:'1+1'}),2,'不用 recover 就能接着写');await page.close();
  });
  await t.test('unsatisfied checked condition stops the tail and never replays the toggle',async()=>{
   const {page,raw,call}=await h.open();const r=await raw('chrome_batch',{steps:[{operation:'page.action',args:{action:'click',selector:'#styled',autoWait:false},postcondition:{selector:'#styled',state:'unchecked',timeoutMs:150}},{operation:'page.evaluate',args:{expression:"document.querySelector('#tail').textContent='1'"}}]});

@@ -47,3 +47,25 @@ test('按标签页等下载：目标标签页关闭立即中止，不等到超�
   const error = await waiting;
   assert.equal(error.code, 'TAB_NOT_FOUND'); assert.ok(Date.now() - started < 2000);
 });
+
+// 11-26 反馈：页面在新窗口或子 frame 里开始的下载配不上来源标签页，按标签页等下载一直看不见它，文件下好了还报“没有开始新的下载”。
+test('按标签页等下载：等待期间同一个网站只有一笔来源不明的下载，就认它（标 inferred）；别的网站的、有好几笔的不认，超时时列出来', async () => {
+  const f = fixture(), url = 'http://erp.local:31101/ierp/index.html?formId=bill', stray = (params: Record<string, unknown>) => f.broker.addEvent(profile, undefined, 'downloads.created', params);
+  f.source.tabUrl = async () => url;
+  let since = f.broker.events(profile, tab, 0).latestSequence;
+  stray({ id: 21, url: 'http://erp.local:31101/ierp/tempfile/download.do?id=9', filename: 'C:/Downloads/模板.xlsx' });
+  const adopted = await waitForTabDownload(f.source, profile, tab, { since }, Date.now() + 1000) as Record<string, unknown>;
+  assert.equal(adopted.downloadId, 21); assert.equal(adopted.attribution, 'inferred');
+
+  since = f.broker.events(profile, tab, 0).latestSequence;
+  stray({ id: 22, url: 'https://other.example/a.zip', filename: 'C:/Downloads/a.zip' });
+  const other = await failure(waitForTabDownload(f.source, profile, tab, { since }, Date.now() + 400));
+  assert.equal(other.code, 'DOWNLOAD_WAIT_TIMEOUT'); assert.match(other.message, /1 笔下载没配上来源标签页（"a\.zip"）/);
+  assert.deepEqual((other.detail as any).recentDownloads.map((item: any) => item.id), [22]);
+
+  since = f.broker.events(profile, tab, 0).latestSequence;
+  stray({ id: 23, url: 'http://erp.local:31101/ierp/tempfile/download.do?id=10' });
+  stray({ id: 24, url: 'http://erp.local:31101/ierp/tempfile/download.do?id=11' });
+  const two = await failure(waitForTabDownload(f.source, profile, tab, { since }, Date.now() + 400));
+  assert.match(two.message, /2 笔下载没配上来源标签页.*分不清/);
+});

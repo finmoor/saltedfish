@@ -160,7 +160,40 @@ test('默认拟人点击（不传 holdMs）按住期间目标挪走：释放前�
     if (command.tabId === tabId && command.method === 'Input.dispatchMouseEvent' && command.params.type === 'mousePressed') target.rect = { left: 600, top: 400, right: 760, bottom: 450, width: 160, height: 50 };
     return undefined;
   };
-  await assert.rejects(run(tabId, { action: 'click', selector: '#go' }), (error: unknown) => (error as { code?: string }).code === 'ELEMENT_MOVED');
+  // 按下已经发出：不是“未派发”，也不再按结果不明暂停标签页，是 dispatched（先核对，不要直接重复）。
+  await assert.rejects(run(tabId, { action: 'click', selector: '#go' }), (error: unknown) => (error as { code?: string }).code === 'ELEMENT_MOVED' && (error as { details?: { outcome?: string } }).details?.outcome === 'dispatched' && /已按下.*挪走/.test((error as Error).message));
   const release = mouse().filter(command => command.params.type === 'mouseReleased');
   assert.ok(release.length >= 1 && release.every(command => command.params.x === -1 && command.params.y === -1), '必须在目标外释放，不能在旧坐标点下去');
+});
+
+test('按住期间目标挪了位置、按下的点还在它上面（开关滑块按下就滑、输入框聚焦变样式）：照常在原处松开，报 clicked', async () => {
+  const { tabId, page } = h.openTab(); const target = page.element('go', { left: 300, top: 200, right: 460, bottom: 250 });
+  const { mouse } = record(tabId), recording = h.hooks.intercept!;
+  h.hooks.intercept = command => {
+    recording(command);
+    // 中心往右挪 30px，比以前的 4px 容差大得多，但仍盖住按下的位置。
+    if (command.tabId === tabId && command.method === 'Input.dispatchMouseEvent' && command.params.type === 'mousePressed') target.rect = { left: 290, top: 196, right: 530, bottom: 256, width: 240, height: 60 };
+    return undefined;
+  };
+  const result = await run(tabId, { action: 'click', selector: '#go' });
+  assert.equal(result.clicked, true);
+  const press = mouse().find(command => command.params.type === 'mousePressed')!, release = mouse().find(command => command.params.type === 'mouseReleased')!;
+  assert.deepEqual([release.params.x, release.params.y], [press.params.x, press.params.y], '在按下的地方松开，不追着目标挪');
+});
+
+test('按住期间别的元素盖住了按下的点（弹层、列表重排）：在目标外松开，ELEMENT_MOVED 带盖住它的元素，outcome dispatched', async () => {
+  const { tabId, page } = h.openTab(); page.element('go', { left: 300, top: 200, right: 460, bottom: 250 });
+  const { mouse } = record(tabId), recording = h.hooks.intercept!;
+  h.hooks.intercept = command => {
+    recording(command);
+    if (command.tabId === tabId && command.method === 'Input.dispatchMouseEvent' && command.params.type === 'mousePressed') page.element('cover', { left: 0, top: 0, right: 1000, bottom: 800 });
+    return undefined;
+  };
+  await assert.rejects(run(tabId, { action: 'click', selector: '#go' }), (error: unknown) => {
+    const info = error as { code?: string; details?: { outcome?: string; detail?: { hit?: { selector?: string } } } };
+    // 假 DOM 的元素读不出完整描述，退回标签名；真 Chrome 里是 #cover（interaction-feedback-1126.integration.ts）。
+    const selector = info.details?.detail?.hit?.selector;
+    return info.code === 'ELEMENT_MOVED' && info.details?.outcome === 'dispatched' && (selector === '#cover' || selector === 'div') && (error as Error).message.includes(`换成了 ${selector}`);
+  });
+  assert.ok(mouse().filter(command => command.params.type === 'mouseReleased').every(command => command.params.x === -1), '在目标外松开');
 });

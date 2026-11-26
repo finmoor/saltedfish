@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Config } from './config.js';
 import { Broker, type CommandController, type Connection } from './broker.js';
-import { BrowserError, errorInfo, validationMessage, unknownResult, pageItems, hideAdminTabs, isProtectedUrl, isLocalFileUrl, LOCAL_FILE_URL_MESSAGE, hiddenTabTitle, CAPABILITY, NOT_DISPATCHED, type JsonObject } from './shared.js';
+import { BrowserError, errorInfo, validationMessage, unknownResult, pageItems, hideAdminTabs, isProtectedUrl, isLocalFileUrl, LOCAL_FILE_URL_MESSAGE, hiddenTabTitle, CAPABILITY, NOT_DISPATCHED, type BrowserEvent, type JsonObject } from './shared.js';
 import { ZodError } from 'zod';
 import { toolMap, functionBodyError } from './tools.js';
 import { StateStore } from './state-store.js';
@@ -32,6 +32,56 @@ const sha256File = async (file: string) => { const hash = createHash('sha256'); 
 // 字符串结果写进 .txt/.csv/.md/.html 时按原文写，其余写成缩进的 JSON。
 const outputText = (value: unknown, file: string) => typeof value === 'string' && path.extname(file).toLowerCase() !== '.json' ? value : JSON.stringify(value ?? null, null, 2);
 // chrome_downloads 原样返回会带完整的 url、finalUrl、referrer，一次性下载链接动辄上万字；网址截到 300 字并标出来，文件位置、状态这些照旧完整。
+// 长等待分段发给扩展，段与段之间看客户端有没有取消：客户端超时断开以后（有的 60 秒就断），不再把标签页占到 timeoutMs 用完（11-26 反馈：之后的截图报 TAB_BUSY）。
+// 取消后最多再占一段（扩展那边这段等完才放手）。中间段超时就接着等，只有最后一段超时才带回扩展写的现场。stableMs 长的段也跟着放长，不然永远等不到“稳定”。
+const WAIT_SLICE_MS = 5000;
+const cancelledWait = () => new BrowserError('CANCELLED', '客户端已经取消了这次等待（多半是它自己的超时到了），已停止，标签页让出来了。单次等待不要超过 55 秒，更久就分几次等。', NOT_DISPATCHED);
+async function slicedWait(broker: Broker, profileId: string, args: JsonObject, connection: Connection, trigger: CommandController, signal?: AbortSignal): Promise<unknown> {
+  const deadline = Date.now() + Number(args.timeoutMs || 30000), slice = Math.max(WAIT_SLICE_MS, Number(args.stableMs || 0) + 3000);
+  const abortable = <T>(work: Promise<T>) => !signal ? work : new Promise<T>((resolve, reject) => {
+    const abort = () => reject(cancelledWait());
+    signal.addEventListener('abort', abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+  for (;;) {
+    if (signal?.aborted) throw cancelledWait();
+    const left = deadline - Date.now(), last = left <= slice, step = Math.max(100, last ? left : slice), started = Date.now();
+    const command = broker.command(profileId, 'page.wait', { ...args, timeoutMs: step }, step, connection, trigger);
+    void command.catch(() => {});
+    try { return await abortable(command); }
+    catch (error) {
+      // 只有扩展明确说“条件没成立、什么都没做”（not_dispatched）的中间段超时才接着等；不带 outcome 的照原样当结果不明抛出。
+      const info = errorInfo(error);
+      if (last || info.code !== 'WAIT_TIMEOUT' || info.outcome !== 'not_dispatched') throw error;
+      // 扩展提前回了超时（不该发生）：补足这一段再发下一段，不空转。
+      const early = step - (Date.now() - started);
+      if (early > 50) await abortable(new Promise(resolve => setTimeout(resolve, early)));
+    }
+  }
+}
+
+// chrome_dialog 没有可答的弹窗时说清是哪种情况：还没弹、已经关了（被谁答的分不出：beforeUnload:"accept" 自动答的、用户在页面上点的都有可能）、标签页没了、调试连接断了。
+// 只读服务端的事件缓存，超出缓存的早先事件看不到。
+const DIALOG_EVENTS = new Set(['Page.javascriptDialogOpening', 'Page.javascriptDialogClosed', 'tabs.removed', 'debugger.detached']);
+export function dialogNotOpen(history: BrowserEvent[], requestedId: unknown): BrowserError {
+  const events = history.filter(event => DIALOG_EVENTS.has(event.method));
+  const ago = (event: BrowserEvent) => `${Math.max(0, Math.round((Date.now() - Date.parse(event.time)) / 1000))} 秒前`;
+  const openings = events.filter(event => event.method === 'Page.javascriptDialogOpening');
+  const opening = typeof requestedId === 'string' ? openings.findLast(event => event.params.dialogId === requestedId) : openings.at(-1);
+  const removed = events.findLast(event => event.method === 'tabs.removed');
+  let reason: string;
+  if (!opening) reason = removed ? `标签页 ${ago(removed)}已经关了。` : typeof requestedId === 'string' ? `没见过 dialogId=${requestedId} 这个弹窗（也可能早于事件缓存）。` : '这个标签页还没弹过框。动作刚返回时页面可能还没弹，稍后用 chrome_events（method:"Page.javascriptDialog"）看。';
+  else {
+    const after = events.filter(event => event.sequence > opening.sequence), type = String(opening.params.type || '');
+    const closed = after.find(event => event.method === 'Page.javascriptDialogClosed'), gone = after.find(event => event.method === 'tabs.removed'), detached = after.find(event => event.method === 'debugger.detached');
+    const answer = (accepted: unknown) => type === 'beforeunload' ? (accepted === true ? '离开' : '留下') : (accepted === true ? '确定' : '取消');
+    if (closed) reason = `这个 ${type} 弹窗 ${ago(closed)}已经关了（${answer(closed.params.result)}），可能是 beforeUnload:"accept" 自动答的，也可能是用户在页面上点的。${gone ? `标签页 ${ago(gone)}也关了。` : ''}`;
+    else if (gone) reason = `标签页 ${ago(gone)}已经关了，弹窗随之没了。`;
+    else if (detached) reason = `调试连接 ${ago(detached)}断开了，这个弹窗看不到了；先截图或 inspect 核对页面。`;
+    else reason = '浏览器连接换过，这个弹窗不归现在的连接；先核对页面。';
+  }
+  return new BrowserError('DIALOG_NOT_OPEN', `没有可以答的弹窗：${reason}没有发送响应。`, NOT_DISPATCHED);
+}
 const DOWNLOAD_URL_CHARS = 300;
 const shortDownload = (item: unknown) => {
   if (!item || typeof item !== 'object') return item;
@@ -161,10 +211,11 @@ export class BrowserService {
       ...(envelope.batch ? { batch: { ...envelope.batch, error: clean(envelope.batch.error) } } : {}) };
   }
 
-  invoke(name: string, input: unknown, owner: string, principal: Principal = adminPrincipal, expectedConnection?: Connection, deadline = Infinity): Promise<ResultEnvelope> {
+  // signal：客户端取消了这次调用（MCP 的 notifications/cancelled、客户端超时、stdio 转发的 HTTP 请求断开）。只有等待类工具据此提前收手，写操作照常做完。
+  invoke(name: string, input: unknown, owner: string, principal: Principal = adminPrincipal, expectedConnection?: Connection, deadline = Infinity, signal?: AbortSignal): Promise<ResultEnvelope> {
     const busy = ['chrome_task_control', 'chrome_pause_profile', 'chrome_release_tab', 'chrome_dialog'].includes(name) ? undefined : this.busy(principal);
     if (busy) return Promise.resolve({ ok: false, error: busy });
-    const tracked = this.invokeTracked(name, input, owner, principal, expectedConnection, deadline);
+    const tracked = this.invokeTracked(name, input, owner, principal, expectedConnection, deadline, signal);
     const promise = principal.admin ? tracked : tracked.then(envelope => this.scrub(envelope));
     this.inFlight.add(promise); this.principalInFlight.set(principal.id, (this.principalInFlight.get(principal.id) ?? 0) + 1);
     void promise.finally(() => {
@@ -175,8 +226,8 @@ export class BrowserService {
     return promise;
   }
 
-  private async invokeTracked(name: string, input: unknown, owner: string, principal: Principal, expectedConnection?: Connection, deadline = Infinity): Promise<ResultEnvelope> {
-    const execution: { operationId?: string; warnings: ReturnType<typeof errorInfo>[]; uploadReleases?: (()=>void|Promise<void>)[]; uploadedByPath?: { name: string; size: number }[]; uploads?: UploadRecord[]; output?: OutputTarget; returnImage?: boolean } = { warnings: [] };
+  private async invokeTracked(name: string, input: unknown, owner: string, principal: Principal, expectedConnection?: Connection, deadline = Infinity, signal?: AbortSignal): Promise<ResultEnvelope> {
+    const execution: { operationId?: string; warnings: ReturnType<typeof errorInfo>[]; uploadReleases?: (()=>void|Promise<void>)[]; uploadedByPath?: { name: string; size: number }[]; uploads?: UploadRecord[]; output?: OutputTarget; returnImage?: boolean; signal?: AbortSignal } = { warnings: [], ...(signal ? { signal } : {}) };
     const releaseUploads=async()=>{for(const release of execution.uploadReleases?.splice(0)||[])try{await release();}catch{execution.warnings.push({code:'UPLOAD_CLEANUP_FAILED',message:'网页操作不会重试；浏览器暂存将随连接关闭或到期释放。'});}};
     let finishActivity: (()=>void)|undefined;
     try {
@@ -246,7 +297,7 @@ export class BrowserService {
     }
   }
 
-  private async perform(name: string, args: JsonObject, owner: string, execution: { operationId?: string; warnings: ReturnType<typeof errorInfo>[]; uploadReleases?: (()=>void|Promise<void>)[]; uploadedByPath?: { name: string; size: number }[]; uploads?: UploadRecord[]; output?: OutputTarget; returnImage?: boolean }, principal: Principal, expectedConnection?: Connection, deadline = Infinity): Promise<unknown> {
+  private async perform(name: string, args: JsonObject, owner: string, execution: { operationId?: string; warnings: ReturnType<typeof errorInfo>[]; uploadReleases?: (()=>void|Promise<void>)[]; uploadedByPath?: { name: string; size: number }[]; uploads?: UploadRecord[]; output?: OutputTarget; returnImage?: boolean; signal?: AbortSignal }, principal: Principal, expectedConnection?: Connection, deadline = Infinity): Promise<unknown> {
     const { broker } = this;
     const profileId = String(args.profileId || ''); const tabId = Number(args.tabId);
     // 非管理员主体不得读取或操作本机管理页：命令里附带管理页 origin，由扩展按标签页当前 URL 逐步核对（见 extension/executor.ts）。
@@ -288,14 +339,15 @@ export class BrowserService {
     }
     if (name==='chrome_wait_response'||name==='chrome_wait_download') {
       const connection=broker.capture(profileId),waitDeadline=Math.min(deadline,Date.now()+Number(args.timeoutMs));
-      const active=()=>{assertConnection();if(broker.profiles.get(profileId)!==connection||connection.socket.readyState!==1)throw new BrowserError('CONNECTION_CHANGED','等待期间原浏览器连接已断开或变化。',NOT_DISPATCHED);};
+      const active=()=>{assertConnection();if(execution.signal?.aborted)throw cancelledWait();if(broker.profiles.get(profileId)!==connection||connection.socket.readyState!==1)throw new BrowserError('CONNECTION_CHANGED','等待期间原浏览器连接已断开或变化。',NOT_DISPATCHED);};
       const source={snapshot:(p:string,t:number|undefined,s:number)=>broker.events(p,t,s),subscribe:(listener:(event:import('./shared.js').BrowserEvent)=>void)=>broker.subscribeEvents(listener),assertActive:active};
       const queryDownload=(downloadId:number)=>broker.command(profileId,'downloads.list',{downloadId,limit:1},Math.max(1,Math.min(30000,waitDeadline-Date.now())),connection);
       if(name==='chrome_wait_download'&&args.tabId!==undefined){
         if(!connection.info.capabilities?.includes(CAPABILITY.downloadsV2))throw new BrowserError('EXTENSION_UPDATE_REQUIRED','按标签页等下载需要新版扩展；可以先用 chrome_downloads 找到 downloadId 再等。',NOT_DISPATCHED);
         // 超时时才查网站设置：管理页这类受保护标签页的地址被隐藏，查不到就不提示。
         const automaticDownloads=async()=>{const tabs=await broker.command(profileId,'tabs.list',listed({}),5000,connection) as JsonObject[];const url=tabs.find(tab=>tab.tabId===tabId)?.url;if(typeof url!=='string'||!/^https?:/.test(url))return undefined;return String((await broker.command(profileId,'site.permission',{url},5000,connection) as JsonObject).setting);};
-        return waitForTabDownload({...source,queryDownload,automaticDownloads},profileId,tabId,{since:args.since as number|undefined},waitDeadline);
+        const tabUrl=async()=>{const tabs=await broker.command(profileId,'tabs.list',listed({}),5000,connection) as JsonObject[];const url=tabs.find(tab=>tab.tabId===tabId)?.url;return typeof url==='string'?url:undefined;};
+        return waitForTabDownload({...source,queryDownload,automaticDownloads,tabUrl},profileId,tabId,{since:args.since as number|undefined},waitDeadline);
       }
       if(name==='chrome_wait_download')return waitForDownload({...source,queryDownload},profileId,args as unknown as DownloadWaitArgs,waitDeadline);
       const allowed=async()=>{
@@ -405,7 +457,7 @@ export class BrowserService {
     if (name === 'chrome_dialog' && !broker.capture(profileId).info.capabilities?.includes(CAPABILITY.dialogControl)) throw new BrowserError('EXTENSION_UPDATE_REQUIRED', `${staleCodeHint(broker.capture(profileId).info) || '此配置的扩展太旧，不支持 chrome_dialog，请在 Chrome 扩展管理页更新扩展。'}未响应弹窗。`, NOT_DISPATCHED);
     if (name === 'chrome_dialog') {
       if (restricted && !broker.capture(profileId).info.capabilities?.includes(CAPABILITY.adminOriginV1)) throw new BrowserError('EXTENSION_UPDATE_REQUIRED', '此配置的扩展尚不支持管理页保护，请在 Chrome 扩展管理页刷新已更新的扩展。未响应弹窗。');
-      return broker.respondDialog(profileId, tabId, owner, caller, args.dialogId, async (dialogId, connection, trigger) => {
+      return await broker.respondDialog(profileId, tabId, owner, caller, args.dialogId, async (dialogId, connection, trigger) => {
         assertConnection();
         execution.operationId = this.state.begin(profileId, tabId, owner, name);
         const finishDialog = (state: 'succeeded'|'failed'|'unknown', code?: string) => { try { this.state.finish(execution.operationId!, state, code); } catch { execution.warnings.push({code:'OPERATION_JOURNAL_FAILED',message:'弹窗结果未能写入日志；先核查当前状态，不重复发送响应。'}); } };
@@ -420,7 +472,7 @@ export class BrowserService {
           catch { execution.warnings.push({code:'OPERATION_JOURNAL_FAILED',message:'弹窗已响应，但原操作的状态未能更新；标签页继续暂停写入，核对页面后用 chrome_recover_tab。'}); }
           return { ...result as JsonObject, writable: !this.state.hasOpenOperation(profileId, tabId) };
         } catch (error) { finishDialog(unknownResult(errorInfo(error)) ? 'unknown' : 'failed', errorInfo(error).code); throw error; }
-      }); // 只绕过被该弹窗阻塞的互斥；不解除账号授权，也不解除别的操作的 unknown 和隔离。
+      }).catch(error => { throw errorInfo(error).code === 'DIALOG_NOT_OPEN' ? dialogNotOpen(broker.events(profileId, tabId, 0).events, args.dialogId) : error; }); // 只绕过被该弹窗阻塞的互斥；不解除账号授权，也不解除别的操作的 unknown 和隔离。
     }
     if (restricted) {
       const protectedDestination=(url:unknown)=>isProtectedUrl(url,origins)||isDesktopSettingsUrl(url);
@@ -540,6 +592,8 @@ export class BrowserService {
     // interaction-v10：locator.inside、条件的 state:"attached"。旧扩展忽略 inside 会在整页里找、点到范围外的同名元素，attached 当成 visible 一直等。动作、等待、批次步骤和后置条件里的都算。
     const usesV10 = (value: unknown, depth = 0): boolean => { if (!value || typeof value !== 'object' || depth > 6) return false; const record = value as JsonObject; if ((record.locator as JsonObject | undefined)?.inside !== undefined || record.state === 'attached') return true; return Object.values(record).some(item => usesV10(item, depth + 1)); };
     if (definition.operation && usesV10(args)) requiredCapabilities.push(CAPABILITY.interactionV10);
+    if (name === 'chrome_action' && args.beforeUnload !== undefined) requiredCapabilities.push(CAPABILITY.interactionV11);
+    if (name === 'chrome_find' && (args.at !== undefined || args.cell !== undefined)) requiredCapabilities.push(CAPABILITY.interactionV11);
     if (restricted && args.tabId !== undefined && definition.operation) requiredCapabilities.push(CAPABILITY.adminOriginV1);
     if (name === 'chrome_batch' && (args.steps as any[]).some(step => step.operation === 'page.dialog')) requiredCapabilities.push(CAPABILITY.dialogControl);
     if (requiredCapabilities.some(capability => !connection.info.capabilities?.includes(capability))) throw new BrowserError('EXTENSION_UPDATE_REQUIRED', `${staleCodeHint(connection.info) || '此配置的扩展尚不支持该功能，请在 Chrome 扩展管理页刷新已更新的扩展。'}未执行页面动作。`);
@@ -573,7 +627,7 @@ export class BrowserService {
       try {
         if (needsFocus) { try { await focus(true); } catch (error) { refused = errorInfo(error).code === 'ADMIN_PAGE_PROTECTED'; throw error; } }
         assertConnection();
-        const data = await broker.command(profileId, definition.operation!, definition.operation === 'tabs.list' ? listed(args) : guarded(args), Number(args.timeoutMs || 30000), connection, trigger);
+        const data = definition.operation === 'page.wait' ? await slicedWait(broker, profileId, guarded(args), connection, trigger, execution.signal) : await broker.command(profileId, definition.operation!, definition.operation === 'tabs.list' ? listed(args) : guarded(args), Number(args.timeoutMs || 30000), connection, trigger);
         if (execution.operationId) {
           const failed = name === 'chrome_batch' && !!data && typeof data === 'object' && (data as JsonObject).completed === false;
           const code = failed ? String(((data as JsonObject).error as JsonObject | undefined)?.code || 'BATCH_FAILED') : undefined;
@@ -597,7 +651,7 @@ export class BrowserService {
     };
     const bound = (!definition.readOnly || needsFocus) && args.tabId !== undefined;
     if (!bound && writes) admit();
-    const result = bound ? await broker.exclusive(profileId, tabId, owner, run, !writes, { admit, stillOpen: () => this.state.hasOpenOperation(profileId, tabId) }) : await run();
+    const result = bound ? await broker.exclusive(profileId, tabId, owner, run, !writes, { admit, stillOpen: () => this.state.hasOpenOperation(profileId, tabId), label: name, until: Date.now() + Number(args.timeoutMs || 30000) }) : await run();
     if(name==='chrome_network_start')return {...result as JsonObject,since:broker.events(profileId,tabId,0).latestSequence};
     // 撤销失败：这个标签页之后的新文档可能还会跑这段脚本，直到调试连接断开（chrome_detach_tab 或关掉标签页）。
     if (name === 'chrome_navigate' && ((result as JsonObject | undefined)?.initScript as JsonObject | undefined)?.removed === false) execution.warnings.push({ code: 'INIT_SCRIPT_NOT_REMOVED', message: '导航已完成，但 initScript 没能撤销：这个标签页之后打开的新文档可能还会跑它。不要紧就照常用；要确保不再跑，用 chrome_detach_tab 断开调试连接（登记随连接一起消失）。' });

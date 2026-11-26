@@ -33,6 +33,8 @@ export class Broker {
   private sizes: number[] = [];
   private eventListeners = new Set<(event: BrowserEvent) => void>();
   private locks = new Map<string, string>();
+  // 锁住标签页的那段操作在跑什么、预计什么时候结束：TAB_BUSY 里写出来，调用方知道等多久，或者先读别的。
+  private running = new Map<string, { label: string; until?: number }>();
   private leases = new Map<string, { owner: string; expires: number; agentKey?: string }>();
   private quarantined = new Set<string>();
   private dialogs = new Map<string, { id: string; connection: Connection; controller?: { principalId: string; owner: string } }>();
@@ -242,7 +244,7 @@ export class Broker {
   // checks.admit：写入的准入检查，排在上面三道互斥检查之后、占用标签页之前执行。它的拒绝（此前的操作仍在执行或结果待核查）不是本次动作的结果，
   // 抛在 try 之外，不会被当成“动作结果未知”而隔离标签页。checks.stillOpen：这个标签页在数据库里是否还有未确认的未知操作；
   // 隔离只是它的内存镜像，记录已被确认（例如管理员确认了无标签页的未知操作）就不再有效，自动撤销。
-  async exclusive<T>(profileId: string, tabId: number, owner: string, action: () => Promise<T>, inspection = false, checks: { admit?: () => void; stillOpen?: () => boolean } = {}): Promise<T> {
+  async exclusive<T>(profileId: string, tabId: number, owner: string, action: () => Promise<T>, inspection = false, checks: { admit?: () => void; stillOpen?: () => boolean; label?: string; until?: number } = {}): Promise<T> {
     const key = `${profileId}:${tabId}`;
     if (!inspection && this.quarantined.has(key)) {
       if (checks.stillOpen && !checks.stillOpen()) this.quarantined.delete(key);
@@ -250,14 +252,20 @@ export class Broker {
     }
     const lease = this.leases.get(key);
     if (lease && lease.expires > Date.now() && lease.owner !== owner) throw new BrowserError('TAB_CLAIMED', '这个标签页被另一个客户端占用，未执行。用 chrome_new_tab 开新标签页，或等它释放。');
-    if (this.locks.has(key)) throw new BrowserError('TAB_BUSY', '标签页正在执行另一段操作；请等待完成。');
+    if (this.locks.has(key)) throw new BrowserError('TAB_BUSY', this.busyMessage(key), NOT_DISPATCHED);
     if (!inspection) checks.admit?.();
     this.locks.set(key, owner);
+    if (checks.label) this.running.set(key, { label: checks.label, ...(checks.until ? { until: checks.until } : {}) });
     try { return await action(); }
     catch (error) {
       if (!inspection && unknownResult(errorInfo(error))) this.quarantined.add(key);
       throw error;
-    } finally { this.locks.delete(key); }
+    } finally { this.locks.delete(key); this.running.delete(key); }
+  }
+
+  private busyMessage(key: string) {
+    const running = this.running.get(key), left = running?.until ? Math.max(1, Math.ceil((running.until - Date.now()) / 1000)) : undefined;
+    return running ? `这个标签页上 ${running.label} 还在执行${left ? `，最多再要约 ${left} 秒` : ''}；等它结束再试。只读的 chrome_inspect、chrome_find 不受影响。` : '标签页正在执行另一段操作；请等待完成。';
   }
 
   recover(profileId: string, tabId: number, owner?: string, mayTakeOver?: (holder: string) => boolean) {

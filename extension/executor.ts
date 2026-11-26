@@ -11,13 +11,15 @@ import { keyboardKey, modifierFlag, modifierKeys, type KeyboardKey } from './key
 import { inputTargetExpression, type InputTarget } from './input-target';
 import { ACTION_SETTLE_MS, INPUT_SETTLE_MS, PageChanges } from './page-change';
 import { needsViewportOperation } from '../src/interaction-policy';
-import { dragPointer, assertPointUnchanged, samePoint, nearPoint, PRESSED_FORCE, type PointerPoint } from './pointer-actions';
+import { dragPointer, assertPointUnchanged, samePoint, PRESSED_FORCE, type PointerPoint } from './pointer-actions';
 import { aimRatio, mousePath, startPoint, wheelSteps, pause, keyGap, type PathPoint } from './human-input';
 import {browserUploads,uploadContent} from './upload-content';
 import {DownloadTabs} from './download-tabs';
 import {JOB_REGISTER_FUNCTION} from '../src/page-jobs';
 import {AgentCursor,type CursorBox} from './agent-cursor';
 import { BackgroundPopups } from './background-popups';
+import { OpenedTabs } from './opened-tabs';
+import { adoptOpened } from './tab-groups';
 
 type Emit = (method: string, params: JsonObject, tabId?: number) => void;
 let emit: Emit = () => {};
@@ -30,13 +32,16 @@ const EXPECTED_DETACH_MS = 15000;
 const contexts = new Map<number, Map<string, JsonObject>>();
 const childSessions = new Map<number, Set<string>>();
 const isolated = new IsolatedRuntime(send,tabId=>[...(contexts.get(tabId)?.values()||[])]);
-const active = new Set<number>();
+// 每个标签页正在执行的命令：在跑什么、期限到哪，TAB_BUSY 里写出来。
+const active = new Map<number, { operation: string; deadline: number }>();
 // 开着焦点模拟的标签页（服务经 page.cdp 开的，或 useViewport 自己补开的），调试会话断开时 Chrome 自己就关了。
 // 后台标签页靠它出帧、收输入，视觉动作因此不用切到前台。
 const focusEmulated = new Set<number>();
 const windowLocks = new WindowLocks();
 // Agent 的后台标签页弹出的新标签页不盖住用户正在看的标签页。
 const backgroundPopups = new BackgroundPopups({ activate: tabId => chrome.tabs.update(tabId, { active: true }), get: tabId => chrome.tabs.get(tabId) });
+// 页面自己打开的新标签页归打开它的会话：配上就移进组（tab-groups.ts 的 adoptOpened），动作结果和 wait_tab 也按它认。
+const openedTabs = new OpenedTabs((tabId, opener) => { void adoptOpened(tabId, opener).catch(() => {}); });
 const cursor = new AgentCursor(send);
 const dialogs = new Dialogs((tabId, args, sessionId) => send(tabId, 'Page.handleJavaScriptDialog', args, sessionId));
 const pageChanges = new PageChanges({evaluate:evaluateInternal,sleep:ms=>sleep(ms),tab:async(tabId,frame)=>{
@@ -163,9 +168,9 @@ export function attachEvents(callback: Emit): void {
     if(method==='Page.frameDetached')isolated.navigated(tabId,String(params.frameId),source.sessionId);
     if (method === 'Page.javascriptDialogOpening') params = dialogs.opening(tabId, params, source.sessionId);
     if (method === 'Page.javascriptDialogClosed') dialogs.closed(tabId);
-    if (method === 'Page.windowOpen') void backgroundPopups.windowOpen(tabId);
+    if (method === 'Page.windowOpen') { void backgroundPopups.windowOpen(tabId); openedTabs.windowOpen(tabId, params.url); }
     // 后台截图期间开的 screencast：每一帧都要回执，Chrome 才接着出下一帧。
-    if (method === 'Page.screencastFrame' && screencasting.has(tabId)) void send(tabId, 'Page.screencastFrameAck', { sessionId: params.sessionId }, source.sessionId).catch(() => {});
+    if (method === 'Page.screencastFrame' && screencasting.has(tabId)) { firstFrames.get(tabId)?.(); void send(tabId, 'Page.screencastFrameAck', { sessionId: params.sessionId }, source.sessionId).catch(() => {}); }
     if (method === 'Page.downloadWillBegin' && typeof params.url === 'string') downloadTabs.willBegin(tabId, params.url);
     if (/^(Network\.|Runtime\.consoleAPICalled|Runtime\.exceptionThrown|Page\.javascriptDialog|Page\.fileChooser|Inspector\.)/.test(method)) {
       // 管理页的控制台、网络（含 Authorization 请求头）事件不转发内容，只留一个标记，避免其他客户端经 chrome_events 读到。
@@ -173,12 +178,12 @@ export function attachEvents(callback: Emit): void {
     }
   });
   chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-    backgroundPopups.onRemoved(tabId, removeInfo?.windowId);
+    backgroundPopups.onRemoved(tabId, removeInfo?.windowId); openedTabs.onRemoved(tabId);
     attached.delete(tabId); focusEmulated.delete(tabId); contexts.delete(tabId); childSessions.delete(tabId); dialogs.forget(tabId);isolated.forget(tabId);pageChanges.forget(tabId);adminTabs.delete(tabId);adminVisits.delete(tabId);cursor.forget(tabId);forgetPointer(tabId);
     emit('tabs.removed', {}, tabId);
   });
   chrome.downloads.onChanged.addListener(delta => emit('downloads.changed', delta as unknown as JsonObject));
-  chrome.tabs.onCreated.addListener(tab => { void backgroundPopups.onCreated(tab); emit('tabs.created', tabInfo(tab) as JsonObject, tab.id); });
+  chrome.tabs.onCreated.addListener(tab => { void backgroundPopups.onCreated(tab); openedTabs.onCreated(tab); emit('tabs.created', tabInfo(tab) as JsonObject, tab.id); });
   chrome.tabs.onActivated.addListener(info => { void backgroundPopups.onActivated(info); });
   void chrome.tabs.query({ active: true }).then(tabs => backgroundPopups.seed(tabs), () => {});
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => { if (change.url !== undefined) noteUrl(tabId, change.url); if (change.status === 'complete') emit('tabs.updated', tabInfo(tab) as JsonObject, tabId); });
@@ -242,7 +247,7 @@ async function evaluate(tabId: number, expression: string, args: JsonObject, dea
     if (guard && (details.exception as JsonObject | undefined)?.value === ADMIN_GUARD_MARKER) throw protectedPage();
     const description = String((details.exception as JsonObject | undefined)?.description || details.text);
     // V8 在第一个可能有副作用的操作之前就终止了，页面没有变化。
-    if (readOnly && description.startsWith('EvalError: Possible side-effect')) throw new BrowserError('SIDE_EFFECT_BLOCKED', `${SIDE_EFFECT_LEAD}${readOnlyHint(expression)}确实要写入就去掉 readOnly。`, NOT_DISPATCHED);
+    if (readOnly && description.startsWith('EvalError: Possible side-effect')) throw new BrowserError('SIDE_EFFECT_BLOCKED', `${SIDE_EFFECT_LEAD}${readOnlyHint(expression)}${READ_ONLY_TAIL}`, NOT_DISPATCHED);
     throw new BrowserError('JAVASCRIPT_ERROR', description);
   }
   const value = result.result as JsonObject;
@@ -255,7 +260,10 @@ const READ_ONLY_SWAPS: [RegExp, string][] = [
   // 等价写法 Chrome 154、156 实测能过（.local/feedback-1108-spike/probe.ts）：querySelectorAll 是标了无副作用的，局部变量、数组的 includes 也算。
   [/\.closest\s*\(/, 'closest 换成先取 const all=[...document.querySelectorAll(选择器)]，再 let e=el; while(e&&!all.includes(e)) e=e.parentElement'],
   [/\.matches\s*\(/, 'matches 换成 [...(el.parentNode||document).querySelectorAll(选择器)].includes(el)'],
-  [/\.elementsFromPoint\s*\(|\.elementFromPoint\s*\(/, 'elementFromPoint 换成按 getBoundingClientRect 比位置'],
+  [/\.elementsFromPoint\s*\(|\.elementFromPoint\s*\(/, '按坐标查元素用 chrome_find 的 at（返回命中的元素、它往上几层和 ref），或按 getBoundingClientRect 比位置'],
+  // 11-26 反馈里被拦的纯读取（Chrome for Testing 154 实测）：localStorage['k'] 能过检查，getItem 不能；性能条目没有能过检查的读法。
+  [/\b(?:localStorage|sessionStorage)\s*\.\s*getItem\s*\(/, "localStorage.getItem('k') 换成 localStorage['k']"],
+  [/\bperformance\s*\.\s*getEntries(?:ByType|ByName)?\s*\(/, '性能条目只读读不出来：看接口请求用 chrome_wait_response 或 network_start 加 events；确实要读条目就去掉 readOnly'],
   [/\.checkVisibility\s*\(/, 'checkVisibility 换成 getBoundingClientRect 和 getComputedStyle'],
   [/\.getClientRects\s*\(/, 'getClientRects 换成 getBoundingClientRect（宽高为 0 就是没显示）'],
   [/Object\.(fromEntries|assign)\s*\(/, 'Object.fromEntries、Object.assign 换成循环给新对象赋值'],
@@ -290,15 +298,20 @@ async function readOnlyAttempt(tabId: number, expression: string, args: JsonObje
   }
 }
 const readOnlySwaps = (expression: string) => READ_ONLY_SWAPS.filter(([pattern]) => pattern.test(expression)).map(([, hint]) => hint);
+// Chrome 被拦时不给位置（行列都是 -1，也没有调用栈，Chrome for Testing 154 实测），说不出是哪一段。改写表里没有对上的，就列出表达式里常见只读写法以外的调用，告诉调用方可能是它们。
+const KNOWN_READS = new Set(['querySelector', 'querySelectorAll', 'getAttribute', 'hasAttribute', 'getBoundingClientRect', 'getComputedStyle', 'includes', 'indexOf', 'lastIndexOf', 'map', 'filter', 'find', 'findIndex', 'some', 'every', 'slice', 'trim', 'toLowerCase', 'toUpperCase', 'split', 'join', 'keys', 'values', 'entries', 'from', 'isArray', 'String', 'Number', 'Boolean', 'parseInt', 'parseFloat', 'concat', 'reduce', 'startsWith', 'endsWith', 'replace', 'test', 'match', 'at', 'max', 'min', 'round', 'floor', 'ceil', 'abs', 'trimStart', 'trimEnd', 'padStart', 'padEnd', 'toFixed', 'charAt', 'substring', 'push', 'flat', 'flatMap', 'sort', 'reverse', 'forEach', 'has', 'get', 'set', 'add', 'Set', 'Map', 'Date', 'now', 'getTime', 'toISOString', 'normalize', 'contains', 'item']);
+const READ_ONLY_TAIL = 'Chrome 只认它标了“无副作用”的内置函数，很多纯读取也会被拦：这段如果只是读取，去掉 readOnly 照样能执行（按写操作记录，标签页要在本会话的组里）；要改页面也是去掉 readOnly。';
 function readOnlyHint(expression: string) {
   const found = readOnlySwaps(expression);
-  return found.length ? `可能是这些写法被拦了：${found.join('；')}。` : '只读核对请只读取（querySelector、getAttribute、textContent、getBoundingClientRect 都能用）。';
+  if (found.length) return `可能是这些写法被拦了：${found.join('；')}。`;
+  const calls = [...new Set([...expression.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)].map(match => match[1]!).filter(name => !KNOWN_READS.has(name) && !['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await'].includes(name)))].slice(0, 6);
+  return calls.length ? `Chrome 不说是哪一段，可能是这些调用：${calls.join('、')}。` : '';
 }
-const SIDE_EFFECT_LEAD = '表达式可能改动页面，Chrome 已拦下，页面没有变化。';
+const SIDE_EFFECT_LEAD = 'Chrome 判断表达式可能改动页面，已拦下，页面没有变化。';
 function replacedHint(replaced: string[], expression: string) {
   const others = replaced.filter(name => name !== 'JSON.stringify'), swaps = readOnlySwaps(expression);
   const fixes = [...(replaced.includes('JSON.stringify') ? ['结果本来就按值返回，去掉 JSON.stringify、直接返回对象即可'] : []), ...(others.length ? [`${others.join('、')}换成不用它的写法`] : [])];
-  return `这个页面把 ${replaced.join('、')} 换成了自己的 JS（网站打的补丁，比如 core-js），Chrome 判断不了它有没有副作用：${fixes.join('；')}。${swaps.length ? `另外，${swaps.join('；')}。` : ''}确实要写入就去掉 readOnly。`;
+  return `这个页面把 ${replaced.join('、')} 换成了自己的 JS（网站打的补丁，比如 core-js），Chrome 判断不了它有没有副作用：${fixes.join('；')}。${swaps.length ? `另外，${swaps.join('；')}。` : ''}${READ_ONLY_TAIL}`;
 }
 
 // 网站常把内置函数换成自己的 JS（core-js 这类补丁，还会把 Function.prototype.toString 一起换掉、假装是原生的）。Chrome 的副作用检查只放行它标过的原生函数，
@@ -394,15 +407,19 @@ export async function execute(operation: string, args: JsonObject, deadline: num
     const result = await dialogs.respond(tabId, args);
     // 被弹窗挡住的那条命令答完才收尾（松开鼠标、导航停下）；等它让出标签页再返回，调用方紧接着的下一步不会撞上 TAB_BUSY。
     for (const until = Math.min(deadline, Date.now() + DIALOG_RELEASE_MS); active.has(tabId) && Date.now() < until;) await sleep(20);
-    return { ...result, ...await pageChanges.read(tabId, ACTION_SETTLE_MS, deadline) };
+    const changes = await pageChanges.read(tabId, ACTION_SETTLE_MS, deadline);
+    // 答了“离开”的 beforeunload 常常是关窗口：标签页随之没了就写明，免得下一步拿这个 tabId 撞上 TAB_NOT_FOUND。
+    const closed = result.type === 'beforeunload' && result.accept === true && await closedWithin(tabId, Math.min(deadline, Date.now() + TAB_GONE_MS));
+    return { ...result, ...(closed ? { tabClosed: true } : changes) };
   }
   // 新命令被已打开的弹窗挡在门外：本命令还没有派发任何输入，所以是明确的未派发。弹窗若由此前已派发的输入触发，那条操作自己的 unknown/隔离保护不受影响；
   // 而在命令运行期间由其输入触发的 DIALOG_OPEN（dialogs.opening/assert）仍不带 not_dispatched，保持未知。
   if (tabId !== undefined && dialogs.has(tabId) && !['tabs.list','tabs.close','tabs.detach'].includes(operation)) throw new BrowserError('DIALOG_OPEN','标签页有弹窗，先用 chrome_events 核对并调用 chrome_dialog；不要重放触发动作。', NOT_DISPATCHED);
   const read = ['tabs.list', 'tabs.wait', 'windows.list', 'page.inspect', 'page.find', 'page.snapshot', 'network.body', 'contexts.list', 'downloads.list'].includes(operation);
   if (tabId !== undefined && !read) {
-    if (active.has(tabId)) throw new BrowserError('TAB_BUSY', '此标签页仍有操作执行中。', NOT_DISPATCHED);
-    active.add(tabId);
+    const running = active.get(tabId);
+    if (running) throw new BrowserError('TAB_BUSY', `此标签页上的 ${running.operation} 还在执行，最多再要约 ${Math.max(1, Math.ceil((running.deadline - Date.now()) / 1000))} 秒；等它结束再试。`, NOT_DISPATCHED);
+    active.set(tabId, { operation, deadline });
   }
   const needsViewport = needsViewportOperation(operation, args);
   const run = () => dispatch(operation, args, deadline, epoch);
@@ -414,14 +431,48 @@ export async function execute(operation: string, args: JsonObject, deadline: num
   let expired = false;
   const bounded = () => settleBy(physical().catch(error => { throw expired ? hung() : error; }), deadline + WATCHDOG_GRACE_MS, async () => {
     expired = true;
-    if (tabId !== undefined && !read && attached.has(tabId)) await Promise.race([detachTab(tabId).catch(() => {}), sleep(WATCHDOG_GRACE_MS)]);
+    // 挂住是因为页面开着弹窗时不拆：调用方已经拿到 DIALOG_OPEN，正要用 chrome_dialog 答；拆了这个框就谁也答不了。被挡住的调用等弹窗答完自己会结束。
+    if (tabId !== undefined && !read && attached.has(tabId) && !dialogs.has(tabId)) await Promise.race([detachTab(tabId).catch(() => {}), sleep(WATCHDOG_GRACE_MS)]);
     throw hung();
   });
   if (tabId === undefined || read) return bounded();
+  // chrome_action 的 beforeUnload:"accept"：动作期间和结束后一小段时间里，这个标签页的下一个“确定离开吗”直接答离开（dialogs.allowLeave）。
+  const leave = operation === 'page.action' && args.beforeUnload === 'accept', started = Date.now();
+  if (leave) dialogs.allowLeave(tabId, Number.POSITIVE_INFINITY);
   return dialogs.run(tabId, commandId, deadline, () => epoch === controlEpoch, bounded, async interrupted => {
     try { if (interrupted && attached.has(tabId)) await send(tabId, 'Emulation.setFocusEmulationEnabled', { enabled: false }).then(() => focusEmulated.delete(tabId), () => {}); }
-    finally { active.delete(tabId); emit('bridge.commandFinished', {commandId}, tabId); }
-  }).catch(error=>{if(operation==='page.batch'&&error instanceof BrowserError&&['DIALOG_OPEN','DIALOG_MISMATCH'].includes(error.code))return dialogs.interruptedBatch(tabId,error);throw error;});
+    finally { if (leave) dialogs.narrowLeave(tabId, LEAVE_GRACE_MS); active.delete(tabId); emit('bridge.commandFinished', {commandId}, tabId); }
+  }).then(async result => {
+      let value = result as JsonObject;
+      if (leave && dialogs.leftSince(tabId, started)) value = { ...value, ...await leftPage(tabId, deadline) };
+      // 这次动作让页面打开了新标签页（按 Page.windowOpen 配上的）：写进结果，不用再 chrome_tabs 找；它已经算本会话的。
+      if (operation === 'page.action' || operation === 'page.batch') { const opened = await openedSince(tabId, started); if (opened.length) value = { ...value, openedTabs: opened }; }
+      return value;
+    },
+    async error => {
+      // 答了“离开”以后标签页关了，动作收尾时的调用碰不到它：输入已经发完，离开就是这个动作要的结果。
+      if (leave && dialogs.leftSince(tabId, started) && await closedWithin(tabId, Math.min(deadline, Date.now() + TAB_GONE_MS))) return { beforeUnload: 'accepted', tabClosed: true };
+      if(operation==='page.batch'&&error instanceof BrowserError&&['DIALOG_OPEN','DIALOG_MISMATCH'].includes(error.code))return dialogs.interruptedBatch(tabId,error);throw error;
+    });
+}
+
+// 答完“离开”后标签页多半跳走或关掉；关窗口要几百毫秒才从标签页列表里消失。
+const TAB_GONE_MS = 1500, LEAVE_GRACE_MS = 5000, REMOVE_RETRY_MS = 600, STUCK_COVER_MS = 2500, FIRST_FRAME_MS = 300, SETTLE_FRAMES_MS = 300;
+// 标签页在加载新文档说明是跳转、不是关窗口，不用再等。
+async function closedWithin(tabId: number, until: number) {
+  for (;;) {
+    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+    if (!tab) return true;
+    if (Date.now() >= until || tab.status === 'loading') return false;
+    await sleep(50);
+  }
+}
+async function openedSince(tabId: number, since: number) {
+  const tabs = await Promise.all(openedTabs.openedBy(tabId, since).map(entry => chrome.tabs.get(entry.tabId).then(tab => ({ tabId: entry.tabId, url: (entry.url || tab.pendingUrl || tab.url || '').slice(0, 200) }), () => undefined)));
+  return tabs.filter(tab => tab !== undefined);
+}
+async function leftPage(tabId: number, deadline: number): Promise<JsonObject> {
+  return { beforeUnload: 'accepted', ...(await closedWithin(tabId, Math.min(deadline, Date.now() + TAB_GONE_MS)) ? { tabClosed: true } : {}) };
 }
 
 const observes = (operation: string, args: JsonObject) => args.observe === true && (operation === 'page.batch' || operation === 'page.action' && args.action !== 'scroll');
@@ -435,8 +486,10 @@ async function observed(tabId: number, operation: string, args: JsonObject, dead
   await pageChanges.start(tabId, { contextId: args.contextId, sessionId: args.sessionId, ...carryGuard(args) }, deadline);
   try {
     const result = await run() as JsonObject;
+    // 主 frame 里的点击把落点交给页面变化：落点附近只改了 class 的元素（自绘开关、折叠面板）也看得出来。iframe 里的坐标不是那个文档的，不传。
+    const point = operation === 'page.action' && args.contextId === undefined && !args.sessionId && typeof result?.x === 'number' && typeof result?.y === 'number' ? { x: result.x, y: result.y } : undefined;
     // 弹窗打断时结果还没定，留给 chrome_dialog 读。
-    return dialogs.interrupted(tabId) ? result : { ...result, ...await pageChanges.read(tabId, settleFor(operation, args), deadline) };
+    return dialogs.interrupted(tabId) ? result : { ...result, ...await pageChanges.read(tabId, settleFor(operation, args), deadline, point) };
   } catch (error) { if (!dialogs.interrupted(tabId)) pageChanges.drop(tabId); throw error; }
 }
 
@@ -470,12 +523,15 @@ async function dispatchOperation(operation: string, args: JsonObject, deadline: 
     await chrome.tabs.get(Number(args.openerTabId));
     while (Date.now() < deadline) {
       if (epoch !== controlEpoch) throw new BrowserError('CANCELLED', '新标签页等待已取消。');
-      const tabs = (await chrome.tabs.query({})).filter(tab => tab.openerTabId === args.openerTabId && !(args.excludeTabIds as number[]).includes(tab.id!) && (!args.urlContains || (tab.url || '').includes(String(args.urlContains))));
+      // openerTabId 之外也按 Page.windowOpen 配对认：从后台标签页打开的新标签页，Chrome 把 opener 填成了用户当时的当前标签页。
+      const tabs = (await chrome.tabs.query({})).filter(tab => (tab.openerTabId === args.openerTabId || openedTabs.openerOf(tab.id!) === args.openerTabId) && !(args.excludeTabIds as number[]).includes(tab.id!) && (!args.urlContains || (tab.url || tab.pendingUrl || '').includes(String(args.urlContains))));
       if (tabs.length > 1) throw new BrowserError('AMBIGUOUS_TAB', '出现多个符合条件的新标签页，请指定更精确的 URL 条件。');
       if (tabs[0]?.status === 'complete') return tabInfo(tabs[0]);
+      // 到期了新标签页已经出来、只是还没加载完（页面重、服务端慢）：先把它交出去，别让调用方以为没开出来又去点一次；要等加载完用 chrome_wait。
+      if (tabs[0] && Date.now() + 100 >= deadline) return { ...tabInfo(tabs[0]), loaded: false };
       await sleep(100);
     }
-    throw new BrowserError('WAIT_TIMEOUT', '没有发现已加载的匹配新标签页。先检查现有标签页，不要重复点击。');
+    throw new BrowserError('WAIT_TIMEOUT', '没有发现匹配的新标签页。先检查现有标签页，不要重复点击。');
   }
   if (operation === 'windows.list') return (await chrome.windows.getAll()).map(window => ({ windowId: window.id, focused: window.focused, state: window.state, width: window.width, height: window.height, type: window.type, incognito: window.incognito }));
   if (operation === 'tabs.create') {
@@ -510,10 +566,32 @@ async function dispatchOperation(operation: string, args: JsonObject, deadline: 
   if (operation === 'tabs.close') {
     // 标签页已经不在了（下载页这类自己关掉的）：要的结果已经达成，不报错。tabId 在一次浏览器运行里不会复用。
     let gone = false;
-    const close = () => chrome.tabs.remove(tabId).catch(error => { if (!tabMissing(error)) throw error; gone = true; });
-    if (args.beforeUnload !== 'accept') { await close(); return { closed: true, ...(gone ? { alreadyClosed: true } : {}) }; }
-    // 要能看到并答 beforeunload，先连上这个标签页；连不上（已经关了）就照常关。
+    // chrome.tabs.remove 赶上标签页正在跳转（答完“离开”后页面开始加载、新文档还没提交）会一直不返回，标签页也没关；再调一次就关掉了（Chrome for Testing 154 实测，6 次里 4 次）。
+    // 页面开着弹窗时不重调：那是在等人答“确定离开吗”，答完这次 remove 自己会收尾。
+    const close = async () => {
+      for (;;) {
+        const attempt = chrome.tabs.remove(tabId).then(() => 'closed' as const, error => { if (tabMissing(error)) return 'gone' as const; throw error; });
+        const outcome = await Promise.race([attempt, sleep(REMOVE_RETRY_MS).then(() => 'waiting' as const)]);
+        if (outcome === 'gone') { gone = true; return; }
+        if (outcome === 'closed') return;
+        if (dialogs.has(tabId) || dialogs.interrupted(tabId)) { await attempt; return; }
+        void attempt.catch(() => {});
+        if (!await chrome.tabs.get(tabId).then(() => true, () => false)) return;
+      }
+    };
+    // 先连上这个标签页才看得到页面问“确定离开吗”：不带 accept 时停下报 DIALOG_OPEN，而不是一直等一个看不见的框。连不上（已经关了、连不上的页面）就照常关。
     await ensure(tabId).catch(() => {});
+    // 关之前页面已经开着弹窗（点了“退出”，框在动作返回后才弹）：chrome.tabs.remove 会一直等这个没人答的框，所以先处理它。
+    const open = dialogs.current(tabId);
+    if (open) {
+      if (args.beforeUnload !== 'accept' || open.type !== 'beforeunload') throw new BrowserError('DIALOG_OPEN', `标签页开着 ${open.type} 弹窗（dialogId=${open.dialogId}，内容 ${JSON.stringify(open.message.slice(0, 200))}），没有关。${open.type === 'beforeunload' ? '要直接离开就带 beforeUnload:"accept" 再关，或者' : '先'}用 chrome_dialog 答。`, NOT_DISPATCHED);
+      await dialogs.respond(tabId, { accept: true, dialogId: open.dialogId, expectedType: 'beforeunload' });
+      // 答了离开，页面多半随之关掉或跳走；还在就接着关。
+      if (await closedWithin(tabId, Math.min(deadline, Date.now() + TAB_GONE_MS))) return { closed: true, beforeUnload: 'accepted' };
+      await dialogs.leaving(tabId, close);
+      return { closed: true, beforeUnload: 'accepted' };
+    }
+    if (args.beforeUnload !== 'accept') { await close(); return { closed: true, ...(gone ? { alreadyClosed: true } : {}) }; }
     const { accepted } = await dialogs.leaving(tabId, close);
     return { closed: true, ...(gone ? { alreadyClosed: true } : {}), ...(accepted ? { beforeUnload: 'accepted' } : {}) };
   }
@@ -755,6 +833,25 @@ const NUDGE_MS = 60, BACKGROUND_CAPTURE_MS = 1500;
 // 上传的目标还没出现时隔多久再找一次；留出余量给设置文件和读回。
 const UPLOAD_POLL_MS = 100, UPLOAD_RESERVE_MS = 2000;
 const screencasting = new Set<number>();
+// 不出帧的标签页（后台标签页、被别的窗口挡住的窗口）每个滚轮事件都要等将近 1 秒才有回执，800px 要 8 秒，还会丢一格（Chrome for Testing 154 无头实测；
+// 11-26 反馈里每格 2 秒左右，页面自己的滚轮处理也重）。滚动期间开着 screencast 让它出帧（同后台截图，不进页面 DOM），回执回到几十毫秒。
+// 开了以后先等出几帧（最多 300ms）再动：合成器拿到新帧之前发的滚轮，页面收得到事件，Chrome 却不滚。
+const firstFrames = new Map<number, () => void>();
+const FRAMES_BEFORE_INPUT = 3;
+async function withFrames<T>(tabId: number, work: () => Promise<T>): Promise<T> {
+  if (screencasting.has(tabId)) return work();
+  screencasting.add(tabId);
+  try {
+    let seen = 0;
+    const framed = new Promise<void>(resolve => firstFrames.set(tabId, () => { if (++seen >= FRAMES_BEFORE_INPUT) resolve(); }));
+    await send(tabId, 'Page.startScreencast', { format: 'jpeg', quality: 1, maxWidth: 32, maxHeight: 32 }).catch(() => {});
+    await Promise.race([framed, sleep(FIRST_FRAME_MS)]);
+    const result = await work();
+    // 滚轮的平滑滚动要靠出帧往前走：马上关掉，最后一格的动画就停在半路（后台标签页再不出帧）。
+    await sleep(SETTLE_FRAMES_MS);
+    return result;
+  } finally { firstFrames.delete(tabId); await send(tabId, 'Page.stopScreencast').catch(() => {}); screencasting.delete(tabId); }
+}
 async function captureFrame(tabId: number, params: JsonObject): Promise<{ data: string }> {
   const tab = await chrome.tabs.get(tabId);
   if (tab.active) return send(tabId, 'Page.captureScreenshot', params) as Promise<{ data: string }>;
@@ -930,6 +1027,20 @@ async function action(tabId: number, args: JsonObject, deadline: number, epoch: 
   catch(error){if(dispatched){const info=errorInfo(error);if(info.outcome==='dispatched')throw error;throw new BrowserError(info.code,info.message,{phase:'execution',outcome:'unknown',...(info.detail?{detail:info.detail}:{})});}throw error;}
 }
 
+// 按住期间复核：在目标所在的 frame 里看按下的那一点上现在是什么（FengPage.pressCheck）。还是目标、它里面或包着它的元素，就照常在原处松开：
+// 像人一样不追着目标挪（按着挪就成了拖动）。开关按下就切换、滑块滑走，输入框聚焦后变样式，目标中心都会挪，以前按中心偏移 4px 取消，报“已取消”其实已经点上了。
+// 换成了不相干的元素、换了文档、目标没了，才在目标外松开。按下已经发出，所以是 dispatched：标签页照常可写，但先核对再决定，不要直接重复。
+async function assertStillPressed(tabId: number, args: JsonObject, point: { lx?: unknown; ly?: unknown; ref?: unknown; documentId?: unknown }, deadline: number) {
+  let check: { documentId?: unknown; related?: boolean; reason?: string; hit?: JsonObject } | undefined;
+  try { check = await evaluateInternal(tabId, elementExpression({ ref: point.ref }, `return FengPage.pressCheck(element,${Number(point.lx)},${Number(point.ly)},state.visible);`), args, deadline) as typeof check; }
+  catch { check = undefined; }
+  if (check?.related && check.documentId === point.documentId) return;
+  const dispatched = (code: string, what: string) => new BrowserError(code, `已按下，松开前${what}，已在目标外松开，没有完成点击。按下本身可能已经生效（开关这类控件按下就切换），先核对页面再决定，不要直接重复。`, { phase: 'execution', outcome: 'dispatched', ...(check?.hit ? { detail: { hit: check.hit } } : {}) });
+  if (check?.reason === 'hidden') throw dispatched('ELEMENT_NOT_VISIBLE', '目标看不见了');
+  const what = !check || check.reason === 'gone' ? '目标不见了（页面重绘或跳转了）' : check.documentId !== point.documentId ? '页面换了文档' : check.reason === 'replaced' && check.hit ? `按下的位置上换成了 ${String(check.hit.selector)}${check.hit.name ? `「${String(check.hit.name)}」` : ''}` : '目标从按下的位置挪走了';
+  throw dispatched('ELEMENT_MOVED', what);
+}
+
 async function prepareTarget(tabId:number,args:JsonObject,deadline:number,epoch:number){
   let id:unknown;
   const pointer=['click','doubleClick','drag','setChecked','hover','scroll'].includes(String(args.action));let previous:Awaited<ReturnType<typeof elementPoint>>|undefined,last='ELEMENT_NOT_FOUND',lastInfo:ReturnType<typeof errorInfo>|undefined,scrolled:{x:number;y:number}|undefined;
@@ -942,6 +1053,18 @@ async function prepareTarget(tabId:number,args:JsonObject,deadline:number,epoch:
     if(['fill','type'].includes(${JSON.stringify(args.action)})&&!(element instanceof HTMLTextAreaElement)&&!element.isContentEditable&&!(element instanceof HTMLInputElement&&!['file','checkbox','radio','button','submit','reset','hidden'].includes(element.type)))FengPage.fail('NOT_TEXT_INPUT');
     if(${args.action==='select'}){if(!(element instanceof HTMLSelectElement))FengPage.fail('NOT_SELECT');const values=${JSON.stringify(args.values||[])};if(!element.multiple&&values.length>1)FengPage.fail('INVALID_OPTION_COUNT');for(const value of values){const option=[...element.options].find(o=>o.value===value);if(!option)FengPage.fail('OPTION_NOT_FOUND');if(option.disabled||option.parentElement instanceof HTMLOptGroupElement&&option.parentElement.disabled)FengPage.fail('OPTION_DISABLED');}}
     return {ref:FengPage.elementRef(element),documentId:FengPage.documentId()${framed?',box:(r=>({x:r.x,y:r.y,width:r.width,height:r.height}))(element.getBoundingClientRect())':''}};`);
+  // 同一个遮挡物一直不变、里面又有能点的按钮（“我知道了”这类模态框）：它不会自己消失，等满期限没有用，提前报错并带上按钮的 ref。
+  // 加载遮罩一般没有按钮，照旧等它消失（上一轮的顾虑）。
+  let cover:{key:string;since:number}|undefined;
+  const stuckCover=(info:ReturnType<typeof errorInfo>)=>{
+    const found=info.code==='ELEMENT_OBSCURED'?(info.detail as {cover?:JsonObject}|undefined)?.cover:undefined;
+    if(!found){cover=undefined;return;}
+    const key=`${String(found.ref)}|${String(found.name??'')}`,controls=Array.isArray(found.controls)?found.controls as JsonObject[]:[];
+    if(cover?.key!==key){cover={key,since:Date.now()};return;}
+    if(Date.now()-cover.since<STUCK_COVER_MS||!controls.length)return;
+    const list=controls.map(item=>`${item.name?`「${String(item.name)}」`:String(item.role??'控件')} ref ${String(item.ref)}`).join('、');
+    throw new BrowserError('ELEMENT_OBSCURED',`目标被 ${String(found.selector)}${found.name?`「${String(found.name)}」`:''} 挡住，${Math.round((Date.now()-cover.since)/1000)} 秒没变化，像是要先处理的弹层，没有点击。它里面能点的：${list}。先点该点的那个，再重做这一步。`,{phase:'precondition',outcome:'not_dispatched',detail:info.detail});
+  };
   while(Date.now()<deadline){
     dialogs.assert(tabId);if(epoch!==controlEpoch)throw new BrowserError('CANCELLED','等待期间控制已取消，目标输入未派发。',{phase:'precondition',outcome:'not_dispatched'});
     try{
@@ -964,7 +1087,7 @@ async function prepareTarget(tabId:number,args:JsonObject,deadline:number,epoch:
     }catch(error){
       const read=beforeInput(error,args,deadline);if(read==='expired')break;
       if(read==='lost'){last='STALE_CONTEXT';previous=undefined;}
-      else{const info=errorInfo(error);if(args.autoWait===false||!retryable.has(info.code)||info.outcome!=='not_dispatched')throw error;last=info.code;lastInfo=info;previous=undefined;}
+      else{const info=errorInfo(error);if(args.autoWait===false||!retryable.has(info.code)||info.outcome!=='not_dispatched')throw error;last=info.code;lastInfo=info;previous=undefined;stuckCover(info);}
     }
     await sleep(Math.min(50,Math.max(1,deadline-Date.now())));
   }
@@ -1033,10 +1156,14 @@ async function actionInput(tabId: number, args: JsonObject, deadline: number, ep
     // 点不了（被挡住、不在视口里）就不点，退回直接聚焦；点击已经发出后出错照常抛出。
     let clicked=false;
     if(human&&prepared){
-      const state=await evaluateInternal(tabId,elementExpression(args,'let active=document.activeElement;while(active?.shadowRoot?.activeElement)active=active.shadowRoot.activeElement;return {focused:active===element,editable:FengPage.browserEditable(element)};'),args,deadline) as {focused:boolean;editable:boolean};
+      const focusState=()=>evaluateInternal(tabId,elementExpression(args,'let active=document.activeElement;while(active?.shadowRoot?.activeElement)active=active.shadowRoot.activeElement;return {focused:active===element,editable:FengPage.browserEditable(element)};'),args,deadline) as Promise<{focused:boolean;editable:boolean}>;
+      const state=await focusState();
       if(!state.focused&&state.editable){
         try{await actionInput(tabId,{action:'click',ref:prepared.ref,autoWait:false,contextId:args.contextId,sessionId:args.sessionId,...carryGuard(args)},deadline,epoch,()=>{clicked=true;markDispatched();});}
-        catch(error){if(clicked)throw error;}
+        catch(error){
+          // 按下时焦点就给了字段，只是松开前的复核没过（字段聚焦后弹出了别的东西盖住落点）：这一下要的就是焦点，拿到了就接着输入。
+          if(clicked&&!(errorInfo(error).code==='ELEMENT_MOVED'&&(await focusState().catch(()=>undefined))?.focused))throw error;
+        }
       }
     }
     const result=await textInput(args,{evaluate:(expression,frame)=>evaluateInternal(tabId,expression,frame,deadline),send:(method,params)=>send(tabId,method,params,sessionId),assertActive,mark:markDispatched,...(human?{human:{wait,deadline,clicked}}:{})});
@@ -1050,12 +1177,14 @@ async function actionInput(tabId: number, args: JsonObject, deadline: number, ep
     assertActive(); markDispatched();
     // 没给位置时滚轮落在视口原点，不在角上画光标，鼠标也不移过去。像真人一样操作时先把鼠标移到滚轮位置，滚动量按一格 100 拆开、格间停几十毫秒。
     const placed = !!target || args.x !== undefined || args.y !== undefined, notches = human ? wheelSteps(deltaX, deltaY) : [];
-    if (placed && human) await moveTo(point, withModifiers);
-    for (const [index, delta] of (notches.length ? notches : [{ deltaX, deltaY }]).entries()) {
-      if (index) await wait(pause('wheelGapMs'));
-      const wheel = { type: 'mouseWheel', ...point, ...delta, ...withModifiers };
-      await (placed ? mouse(wheel) : send(tabId, 'Input.dispatchMouseEvent', wheel, sessionId));
-    }
+    await withFrames(tabId, async () => {
+      if (placed && human) await moveTo(point, withModifiers);
+      for (const [index, delta] of (notches.length ? notches : [{ deltaX, deltaY }]).entries()) {
+        if (index) await wait(pause('wheelGapMs'));
+        const wheel = { type: 'mouseWheel', ...point, ...delta, ...withModifiers };
+        await (placed ? mouse(wheel) : send(tabId, 'Input.dispatchMouseEvent', wheel, sessionId));
+      }
+    });
     return { scrolled: true, ...point, deltaX, deltaY, ...withModifiers };
   }
   if (args.action === 'press') {
@@ -1174,7 +1303,8 @@ async function actionInput(tabId: number, args: JsonObject, deadline: number, ep
     assertActive();markDispatched();
     const count=args.action==='doubleClick'?2:1;
     for(let clickCount=1;clickCount<=count;clickCount++){
-    if(clickCount>1&&prepared){const fresh=await elementPoint(tabId,{...args,scrollIntoView:false},deadline);assertPointUnchanged(point,fresh,'第一次点击后目标已变化，第二次点击未派发。');}
+    // 第一次点击已经完成：之后目标变了只是第二次没发，标签页照常可写（dispatched），但不要整个重做。
+    if(clickCount>1&&prepared){try{const fresh=await elementPoint(tabId,{...args,scrollIntoView:false},deadline);assertPointUnchanged(point,fresh,'第一次点击已完成，之后目标变了，第二次点击没有派发；先核对页面，不要重做双击。');}catch(error){const info=errorInfo(error);throw new BrowserError(info.code,info.message,{phase:'execution',outcome:'dispatched',...(info.detail?{detail:info.detail}:{})});}}
     // 像真人一样操作：停到目标上一会儿再按下，双击两次之间也隔一会儿；没给 holdMs 时按住几十到一百多毫秒。
     if(human)await wait(clickCount>1?pause('doubleGapMs'):Math.max(0,pause('hoverMs')-(Date.now()-arrived)));
     assertActive();let released=false;
@@ -1182,9 +1312,8 @@ async function actionInput(tabId: number, args: JsonObject, deadline: number, ep
       await mouse({ type: 'mousePressed', ...coordinates, button, buttons, clickCount, force: PRESSED_FORCE, ...withModifiers });
       const hold=args.holdMs!==undefined?Number(args.holdMs):human?pause('holdMs'):0;
       await wait(hold);
-      // 默认拟人路径也按住几十毫秒，释放前同样要复核目标，不以是否显式传 holdMs 为条件。复核不滚动页面（鼠标正按着），
-      // 容差 4 像素：按钮按下时下移一两像素很常见，不能因此取消点击；目标真被挪走（重排、遮挡）才拦。
-      if(hold>0&&prepared){const fresh=await elementPoint(tabId,{...args,scrollIntoView:false},deadline);if(!nearPoint(point,fresh,4)||fresh.documentId!==prepared.documentId)throw new BrowserError('ELEMENT_MOVED','按住期间目标变化，已取消点击；先检查页面。');}
+      // 默认拟人路径也按住几十毫秒，释放前同样要复核，不以是否显式传 holdMs 为条件；复核不滚动页面（鼠标正按着）。
+      if(hold>0&&prepared)await assertStillPressed(tabId,args,point,deadline);
       await mouse({ type: 'mouseReleased', ...coordinates, button, buttons: 0, clickCount, ...withModifiers });
       released=true;
     } finally {if(!released){

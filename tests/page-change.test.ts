@@ -13,7 +13,9 @@ function harness(respond: (expression: string) => unknown, tab: JsonObject | Err
   });
   return { changes, waits, calls };
 }
-const reading = (quiet: unknown, result: unknown) => (expression: string) => expression.includes('watchPage') ? true : expression.includes('pageQuietFor') ? quiet : result;
+// 页面里的 pageActivity：quiet 是安静了多久（-1 没动静，null 文档换了），readable 表示已经读得出变化。
+const activity = (quiet: number | null, readable = true) => quiet === null ? null : { quiet, readable };
+const reading = (quiet: number | null, result: unknown) => (expression: string) => expression.includes('watchPage') ? true : expression.includes('pageActivity') ? activity(quiet) : result;
 const far = () => Date.now() + 30000;
 
 test('没开始观察时什么都不读，也不等待', async () => {
@@ -34,7 +36,7 @@ test('点击多等一会儿，输入几乎不等；只读一次，读过就清�
 
 test('页面还在变时继续等到安静，但有上限', async () => {
   let quiet = 0;
-  const { changes, waits } = harness(expression => expression.includes('pageQuietFor') ? quiet++ * 40 : expression.includes('pageChanges') ? { changed: true } : true);
+  const { changes, waits } = harness(expression => expression.includes('pageActivity') ? activity(quiet++ * 40) : expression.includes('pageChanges') ? { changed: true } : true);
   await changes.start(7, frame, far());
   await changes.read(7, INPUT_SETTLE_MS, far());
   assert.deepEqual(waits, [50, 100, 60, 20], '每次只补足到安静窗口');
@@ -48,7 +50,7 @@ test('页面还在变时继续等到安静，但有上限', async () => {
 
 test('点击后完全没动静时继续看到上限，一有变化就按安静收尾；输入类动作不多等', async () => {
   const replies = [-1, -1, 30, 200];
-  const clicked = harness(expression => expression.includes('pageQuietFor') ? replies.shift() : expression.includes('pageChanges') ? { changed: true, added: ['已保存'] } : true);
+  const clicked = harness(expression => expression.includes('pageActivity') ? activity(replies.shift()!) : expression.includes('pageChanges') ? { changed: true, added: ['已保存'] } : true);
   await clicked.changes.start(7, frame, far());
   assert.deepEqual((await clicked.changes.read(7, ACTION_SETTLE_MS, far())).pageChange, { changed: true, added: ['已保存'] });
   assert.deepEqual(clicked.waits, [300, 150, 150, 70], '等到变化之后再等安静');
@@ -56,6 +58,34 @@ test('点击后完全没动静时继续看到上限，一有变化就按安静�
   await typed.changes.start(7, frame, far());
   await typed.changes.read(7, INPUT_SETTLE_MS, far());
   assert.deepEqual(typed.waits, [50]);
+});
+
+test('点击后有动静却读不出变化（只出了遮罩）时多看一会儿，读出来再按安静收尾；最多 2 秒；输入类动作不多等', async () => {
+  const replies = [activity(120, false), activity(270, false), activity(40), activity(150)];
+  const clicked = harness(expression => expression.includes('pageActivity') ? replies.shift() : expression.includes('pageChanges') ? { changed: true, added: ['保存成功'] } : true);
+  await clicked.changes.start(7, frame, far());
+  assert.deepEqual((await clicked.changes.read(7, ACTION_SETTLE_MS, far())).pageChange, { changed: true, added: ['保存成功'] });
+  assert.deepEqual(clicked.waits, [300, 150, 150, 60], '遮罩安静了也不收口，等到“保存成功”出来');
+  // 一直读不出：看到 2 秒为止。
+  const stuck = harness(expression => expression.includes('pageActivity') ? activity(500, false) : expression.includes('pageChanges') ? { changed: false } : true);
+  await stuck.changes.start(7, frame, far());
+  let now = Date.now(); const real = Date.now;
+  Date.now = () => (now += 150);
+  try { await stuck.changes.read(7, ACTION_SETTLE_MS, Number.MAX_SAFE_INTEGER); } finally { Date.now = real; }
+  const total = stuck.waits.reduce((sum, ms) => sum + ms, 0);
+  assert.ok(total > 800 && total <= 2000, `比 0.8 秒多看，但不超过 2 秒：${stuck.waits}`);
+  const typed = harness(expression => expression.includes('pageActivity') ? activity(150, false) : expression.includes('pageChanges') ? { changed: false } : true);
+  await typed.changes.start(7, frame, far());
+  await typed.changes.read(7, INPUT_SETTLE_MS, far());
+  assert.deepEqual(typed.waits, [50], '输入类动作安静了就收口');
+});
+
+test('点击落点传进页面：附近元素的 class 变化由页面函数按它来算', async () => {
+  const { changes, calls } = harness(reading(5000, { changed: true, updated: [{ ref: 'a:1', class: '+open' }] }));
+  await changes.start(7, frame, far());
+  await changes.read(7, ACTION_SETTLE_MS, far(), { x: 12, y: 34 });
+  assert.ok(calls.some(call => call.includes('pageActivity({"x":12,"y":34})')), calls.join(' | '));
+  assert.ok(calls.some(call => call.includes('pageChanges({"x":12,"y":34})')));
 });
 
 test('没有变化时说清看了多久，文档换了或正在跳转时说实话', async () => {

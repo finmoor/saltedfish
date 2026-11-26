@@ -85,6 +85,7 @@ npm run test:ui
 | `extension/text-input.ts` / `input-target.ts` / `keyboard.ts` | 文本输入、派发前目标与焦点复核、press/keySequence 共用键位 |
 | `extension/download-tabs.ts` | 页面触发的下载按 URL 配上来源标签页 |
 | `extension/background-popups.ts` | Agent 的后台标签页打开的新标签页被放到前台时，切回用户原来的标签页（按发起方的 `Page.windowOpen` 认） |
+| `extension/opened-tabs.ts` | 页面自己打开的新标签页归谁：按发起方的 `Page.windowOpen` 配对，配上就移进那个会话的组（Chrome 的 `openerTabId` 靠不住） |
 | `extension/service-probe.ts` | 打开管理页前确认地址连得上，弹窗和后台共用 |
 | `extension/self-update.ts` | 一键更新：解析和校验更新包、确认文件夹、写入和回退 |
 | `extension/bridge-auth.ts` | 桥接握手 v2 的扩展侧：双向挑战应答，配对密钥只作 HMAC 的 key，不上线 |

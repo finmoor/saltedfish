@@ -4,8 +4,9 @@ const runtime = (body: string) => `(() => { ${body} })()`;
 export function inspectExpression(args: JsonObject) { return runtime(`return FengPage.pageDom(${JSON.stringify({...args,mode:'inspect'})});`); }
 export function findExpression(args: JsonObject) { return runtime(`return FengPage.pageDom(${JSON.stringify({...args,mode:'find'})});`); }
 export function watchExpression() { return runtime('return FengPage.watchPage();'); }
-export function quietExpression() { return runtime('return FengPage.pageQuietFor();'); }
-export function changesExpression() { return runtime('return FengPage.pageChanges();'); }
+type Point = { x: number; y: number } | undefined;
+export function activityExpression(point?: Point) { return runtime(`return FengPage.pageActivity(${point ? JSON.stringify(point) : ''});`); }
+export function changesExpression(point?: Point) { return runtime(`return FengPage.pageChanges(${point ? JSON.stringify(point) : ''});`); }
 export function documentExpression() { return runtime('return FengPage.documentId();'); }
 export function conditionExpression(args:JsonObject){return runtime(`return FengPage.matchesCondition(${JSON.stringify(args)});`);}
 export function waitContextExpression(args:JsonObject){return runtime(`return FengPage.waitContext(${JSON.stringify(args)});`);}

@@ -104,9 +104,10 @@ test('beta.17 isolation and interaction contracts',async t=>{
  await t.test('held pointer target changes cancel the click and release buttons without replay',async()=>{
   const {page,call,raw}=await h.open();
   await page.evaluate(()=>{(window as any).ups=[];document.addEventListener('mouseup',e=>(window as any).ups.push(e.buttons));document.querySelector('#click')!.addEventListener('mousedown',()=>setTimeout(()=>{(document.querySelector('#click') as HTMLElement).style.transform='translateX(80px)';},20),{once:true});});
-  const result=await raw('chrome_action',{action:'click',selector:'#click',holdMs:100});assert.equal(result.error?.code,'ELEMENT_MOVED');assert.equal(result.error?.outcome,'unknown');
+  // 按钮按下就挪开，落点落到背景上：取消，不在背景上松开（按钮收不到点击，click 还会落到公共祖先上）。按下已经发出，是 dispatched，不暂停写入。
+  const result=await raw('chrome_action',{action:'click',selector:'#click',holdMs:100});assert.equal(result.error?.code,'ELEMENT_MOVED');assert.equal(result.error?.outcome,'dispatched');
   assert.equal(await page.evaluate(()=>(window as any).clicks||0),0);assert.deepEqual(await page.evaluate(()=>(window as any).ups),[0]);
-  await call('chrome_recover_tab');await call('chrome_action',{action:'click',selector:'#click'});assert.equal(await page.evaluate(()=>(window as any).clicks),1);await page.close();
+  await call('chrome_action',{action:'click',selector:'#click'});assert.equal(await page.evaluate(()=>(window as any).clicks),1,'不用 recover 就能接着写');await page.close();
  });
  await t.test('postconditions wait for page results, stop on failure and never repeat the action',async()=>{
   const {page,call,raw}=await h.open();

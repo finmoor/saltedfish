@@ -22,6 +22,8 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 
 写操作只能作用于本会话新建、接管的标签页及其打开的链接或弹窗。已有标签页先用 `chrome_claim_tab` 接管；否则返回 `TAB_OUTSIDE_GROUP`。读取不受标签组范围限制，但仍受配置授权和管理页保护限制。
 
+页面自己打开的新标签页（`target=_blank` 的链接、`window.open`、提交到新窗口的表单）按发起方调试会话里的 `Page.windowOpen` 认出是谁打开的：同窗口的普通标签页移进打开它的会话组，弹出窗口、固定的、别的会话组里的不移动，但同样算这个会话的、不用接管就能写。Chrome 给新标签页的 `openerTabId` 靠不住：从后台标签页打开时填的是用户当时的当前标签页，之后还可能被清掉，所以不只看它；按 opener 认定过一次就记下。只认 `Page.windowOpen` 之后（最多早 100ms）建出来、唯一对得上的那个，分不清时不认，退回 `chrome_claim_tab`。动作结果里的 `openedTabs:[{tabId,url}]` 列出这次打开的新标签页。需要扩展带 `interaction-v11`（0.3.32 起），旧扩展只按 `openerTabId` 认。
+
 - 别的活动会话组里的标签页不能写入或接管。组范围检查拒绝写入时返回 `TAB_OUTSIDE_GROUP`；接管或占用冲突返回 `TAB_CLAIMED`。
 - 用户把标签页拖出 Agent 组，视为收回，返回 `TAB_TAKEN_BACK`。不要再次接管；可请用户拖回原组，或新建标签页。仅把其他标签页拖入组里不算授权。
 - 固定标签页、用户自己组里的标签页和不能分组的窗口不会被强行移动；接管后通过占用协调。未能进组时可带 `TAB_NOT_GROUPED` 警告。
@@ -60,7 +62,11 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 
 `locator.text` 只保留最贴近文字的那一层，不同时返回包含它的外层容器。多个匹配不要猜：先收窄范围或获取候选，再使用 `ref`、`nth`。`AMBIGUOUS_SELECTOR`、`AMBIGUOUS_SCOPE` 的消息最多列出 5 个候选，结构化信息在 `detail.candidates`、`detail.total`。带 `exact:false` 撞上多个、其中正好一个与 `text`、`name`、`label` 一字不差时，消息会提示去掉 `exact:false`，不替调用方选择。
 
-`chrome_find` 必须提供 `locator`；其 `selector` 是 `locator.inside` 的简写，不是独立目标定位。`selector` 与 `locator.inside` 同时提供返回 `INVALID_ARGUMENT`。`inside` 未匹配任何根时，查找结果带 `insideMatched:0`；动作的 `ELEMENT_NOT_FOUND` 也会说明范围为空。无效 CSS 返回 `INVALID_SELECTOR`。
+`chrome_find` 在 `locator`、`at`、`cell` 中选一个；其 `selector` 是 `locator.inside` 的简写，不是独立目标定位。`selector` 与 `locator.inside` 同时提供返回 `INVALID_ARGUMENT`。`inside` 未匹配任何根时，查找结果带 `insideMatched:0`；动作的 `ELEMENT_NOT_FOUND` 也会说明范围为空。无效 CSS 返回 `INVALID_SELECTOR`。
+
+`chrome_find` 的 `at:{x,y}` 按视口坐标查：返回落点上的元素和它往上几层（最多 5 个），最贴近的在前，各带 `ref`、`box`。在隔离世界里命中测试，页面看不到，只读模式下也能用（`readOnly` 的 `chrome_evaluate` 里 `elementFromPoint` 会被拦）。
+
+`cell:{row,column}` 找表格单元格：行里含 `row` 这段文字、列头是 `column` 的那一格；不给 `row` 返回这一列看得见的每一格。原生 `table` 和 `role=grid/row/cell` 都认；表头和表体分成两张表的（固定表头、冻结列）按列头的水平位置对齐。找到的格子带 `ref`，可以直接点或读。只渲染看得见那几行的表格（虚拟滚动）里，没出来的行找不到，结果带 `note` 说明，由调用方先滚到那一行；工具不替调用方滚动。`selector` 在这里当范围，只找这些表格里的格子。两者都需要 `interaction-v11`（0.3.32 起）。
 
 `chrome_find` 是即时读取，没有目标就返回空，不等候选出现。`chrome_action` 默认 `autoWait:true`，只在首次输入前等待目标就绪；`autoWait:false` 立即检查。已经派发输入后不自动重试。
 
@@ -72,7 +78,7 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 
 ### 读取结果与上下文
 
-`chrome_inspect` 返回页面文字、元素引用、值、勾选、选择和只读状态。省略 `visible`、`disabled`、`readOnly` 时，分别表示可见、可用、可写。密码和常见敏感字段脱敏。
+`chrome_inspect` 返回页面文字、元素引用、值、勾选、选择和只读状态。省略 `visible`、`disabled`、`readOnly` 时，分别表示可见、可用、可写。密码和常见敏感字段脱敏：值换成 `valueRedacted:true`，`redactedBy` 写明原因：`password` 密码框，`autocomplete` 自动填充属性说它是当前密码、验证码或卡号，`name` 名字或标签里有敏感词，`marked` 页面标了 `data-mcp-sensitive`。`autocomplete="new-password"` 只在密码框上算：很多系统给普通输入框写它来关掉 Chrome 的自动填充。
 
 - `scopeSelector`、`scopeRef` 范围包含其 open Shadow DOM。范围本身是控件时，即使隐藏也会列出，例如隐藏文件框。
 - 文件框带 `fileCount`、`fileNames`、`fileSizes`。多选下拉带选中项信息；富文本返回编辑器纯文本。
@@ -111,7 +117,7 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 | `outside_viewport` | 滚动后仍在视口外 |
 | `clipped` | 被祖先的 `overflow` 裁掉 |
 
-指针动作还验证 frame 几何、落点命中、遮挡和稳定性。遮挡返回 `ELEMENT_OBSCURED`，`detail.cover` 说明遮挡元素；`pointer-events:none` 会单独说明。加载遮罩可能短暂存在，默认等待就绪，不一发现遮挡就立即失败。
+指针动作还验证 frame 几何、落点命中、遮挡和稳定性。遮挡返回 `ELEMENT_OBSCURED`，`detail.cover` 说明遮挡元素，`detail.cover.controls` 列出遮挡层里能点的控件（最多 5 个，带 `ref`、`name`，没写 role 的自绘按钮按“鼠标是手形、字很短”认）；`pointer-events:none` 会单独说明。加载遮罩可能短暂存在，默认等待就绪；但同一个遮挡物超过 2.5 秒没变、里面又有能点的控件（“我知道了”这类模态框），它不会自己消失，就提前报错，不等满期限，仍是未派发。先点该点的那个控件，再重做这一步。
 
 点击或双击一组选项的容器，若落点会选中其中一项且至少有两个可见选项，返回 `CONTAINER_TARGET`、未派发。请定位具体选项，或使用 `choose`。其他可点击容器的结果可能带 `landedOn`，说明实际落在哪个子控件。
 
@@ -146,6 +152,8 @@ MCP 会话第一次 `chrome_new_tab` 或 `chrome_claim_tab` 时建立自己的�
 `drag.steps` 为 2–100，`durationMs` 为 0–10000，计入操作期限。失败时释放按住的指针；已发出的事件不回滚、不重放。
 
 `scroll` 的元素定位与 `x/y` 二选一。`deltaX`、`deltaY` 都省略时纵向滚 600；只给一个时另一个为 0。结果带 `scrolled`、实际 `x/y`、`deltaX`、`deltaY`。
+
+不出帧的标签页（后台标签页、被别的窗口挡住的窗口）每个滚轮事件都要等将近 1 秒才有回执，平滑滚动的最后一格还会停在半路。滚动期间扩展临时开着 `Page.startScreencast` 让它出帧，滚完再开约 0.3 秒，不进页面 DOM；800px 约 1 秒。页面自己处理滚轮很重时仍会慢。
 
 `modifiers` 是位标志：Alt=1、Ctrl=2、Meta=4、Shift=8。支持 `click`、`doubleClick`、`drag`、`hover`、`scroll`、`press`，结果按适用路径回显。鼠标动作将标志放进每个鼠标事件，不单独派发修饰键的键盘事件；依赖键盘事件的页面使用 `press`。`fill`、`type`、`select` 等不支持非零 `modifiers`。
 
@@ -229,7 +237,9 @@ contenteditable 编辑根未显式写 role 时按 `textbox` 处理，可用 `loc
 - 输入前及逐键、组合输入的各步之间，复查原文档、引用、焦点和可编辑性。变化则停止剩余输入，返回 `FOCUS_CHANGED` 或 `NOT_EDITABLE`；不把焦点抢回。已经送出的字符可能生效。
 - 派发后页面主动跳到下一格、禁用字段或移走焦点，不单独判失败。`fill` 值核验通过即可成功，可能带 `focusVerified:false`；`type` 如实报告焦点和可读到的值，不因 `false` 自动重输。
 - 悬停使同一元素移动时，执行器可等待停稳并跟随，最多 3 次、总计约 1.5 秒。仍不稳定或元素变化则在按下前返回 `ELEMENT_MOVED`、`not_dispatched`。
-- 按住期间再次复核目标。目标移动超过约 4 CSS 像素或无法继续安全命中时，在目标外释放，避免迟到的点击。此时已按下，不能按未派发处理。
+- 按住期间再次复核：看按下的那一点上现在是什么。是目标本身、它里面的元素、label 和它的控件，或目标所属的那个控件（往上最近的按钮、链接、表单控件、label，或 `role=switch/checkbox/option/menuitem/tab` 这类）里的任何部分，就照常在原处松开，不追着目标挪：开关的滑块按下就滑走、落点落到开关的轨道上，输入框聚焦后变样式，点击照常完成。一般的容器、背景不算：按钮按下就挪开时，在背景上松开它收不到点击，click 还会落到公共祖先上，所以取消。按下的位置上换成了别的元素（盖上弹层、列表重排）、目标挪走、换了文档或目标不见了，就在目标外松开，返回 `ELEMENT_MOVED`；目标在按住期间看不见了返回 `ELEMENT_NOT_VISIBLE`。两者都是 `outcome:"dispatched"`：按下已经发出，可能已经生效，标签页照常可写，先核对页面再决定，不要直接重复。`detail.hit` 说明换上来的是什么。
+- `fill`、`type` 为了聚焦点的那一下被取消，但字段已经拿到焦点，就接着输入。
+- 双击的第一下已经完成、第二下之前目标变了：第二下不发，返回 `outcome:"dispatched"`，不要整个重做双击。
 
 同窗口视觉操作进入窗口队列，不同窗口可以并行。标签页互斥、占用和窗口队列保护不同竞态。异常路径尽量释放按键和鼠标，但分离的 CDP 调用不是原子事务。
 
@@ -242,7 +252,7 @@ contenteditable 编辑根未显式写 role 时按 `textbox` 处理，可用 `loc
 | `outcome` | 含义 | 调用方处理 |
 | --- | --- | --- |
 | `not_dispatched` | 此步未派发业务输入，确定未开始执行该动作 | 排除阻碍、核对目标后可重试；不代表页面连悬停等准备性变化都没有 |
-| `dispatched` | 动作已经执行，但选择确认或后置检查未通过 | 标签页通常仍可写；先核对，不重复动作 |
+| `dispatched` | 动作已经执行（或已按下），但选择确认、后置检查未通过，或按住期间目标被换掉、双击只完成一下 | 标签页通常仍可写；先核对，不重复动作 |
 | `unknown` | 无法确认动作最终结果，可能部分或全部生效 | 暂停相关写入，先核对实际页面，再显式恢复 |
 
 不要只凭错误码判断能否重试。同一错误可因发生阶段不同具有不同 `outcome`。批次中某一步未派发，不代表整批未执行；已完成步骤保留。
@@ -278,13 +288,13 @@ contenteditable 编辑根未显式写 role 时按 `textbox` 处理，可用 `loc
 | --- | --- |
 | `changed` | 观察期间是否看到变化；`false` 不等于动作无效，可带 `waitedMs` |
 | `added` / `moreText` | 新文字及未放入摘要的条数 |
-| `updated` / `moreUpdated` | 已有控件的值、勾选、展开、禁用、名称等变化，带 `ref`、`name`；敏感值脱敏 |
+| `updated` / `moreUpdated` | 已有控件的值、勾选、展开、禁用、名称等变化，带 `ref`、`name`；敏感值脱敏。点击落点附近（落点上的元素往上 4 层和它里面不大的子树）只改了 class 或 aria 状态的元素也在这里，如 `class:"+switch-open"` |
 | `elements` / `moreElements` | 新出现或由隐藏转可见的控件，可直接用其引用操作 |
 | `removedText` | 消失文字条数 |
 | `url` / `title` | 改变后才带 |
 | `navigated` / `loading` | 文档变化、仍在加载 |
 
-观察会短暂等待页面安静，最多约 0.8 秒；慢请求另用结构化等待或网络等待。观察读取不占窗口视觉队列；读取失败只少这段摘要，不把业务动作判失败。原生弹窗中断时，摘要由 `chrome_dialog` 答完后读取。队列任务不做这种面向即时调用方的观察。
+观察会短暂等待页面安静，一般最多约 0.8 秒。点击后已经有动静、却还读不出变化（只出了遮罩、loading，请求多半还在路上）时继续看，最多约 2 秒，“保存成功”这类请求回来才出、一两秒后又消失的提示接得住；更慢的请求另用结构化等待或网络等待，保存这类结果最好把提示文字写进 `postcondition`。动作让页面打开了新标签页时，结果另带 `openedTabs`（见标签组一节）。观察读取不占窗口视觉队列；读取失败只少这段摘要，不把业务动作判失败。原生弹窗中断时，摘要由 `chrome_dialog` 答完后读取。队列任务不做这种面向即时调用方的观察。
 
 ### 后置条件
 
@@ -334,7 +344,11 @@ contenteditable 编辑根未显式写 role 时按 `textbox` 处理，可用 `loc
 
 `WAIT_TIMEOUT` 尽可能带现场：当前 `url`、`title`、`loading`；等文字时有最多 3 段 `closestText`；等元素时有 `matches`、`visible`；等隐藏时有最多 3 个 `stillVisible`（引用、角色、名称）；带 `attribute` 时有匹配元素这个属性现在的值 `attribute:{name,values}`（最多 3 个不同的值，没有该属性为 `null`），消息里写成“data-mention 现在是 "activity"”这样。后置检查超时也采用这些诊断。
 
-单次 `chrome_wait` 最多 300 秒；批次 `page.wait.timeoutMs` 范围 100–300000，且受整批期限限制。客户端工具期限可能更短；`saltedfish connect` 配置的超时约 320–330 秒，不代表每个客户端都会持续同步等待。长作业使用 `chrome_job_start` 加分段 `chrome_job_status`。
+单次 `chrome_wait` 最多 300 秒；批次 `page.wait.timeoutMs` 范围 100–300000，且受整批期限限制。客户端工具期限可能更短：有的客户端 60 秒就断开，所以单次等待建议不超过 55 秒，更久就分几次等。长作业使用 `chrome_job_start` 加分段 `chrome_job_status`。
+
+服务把长的 `chrome_wait` 切成约 5 秒一段发给扩展（`stableMs` 长的段跟着放长），段与段之间看客户端有没有取消这次调用（MCP 的 `notifications/cancelled`，SDK 客户端自己超时时也会发；stdio 转发的调用则是转发请求断开）。取消后返回 `CANCELLED`、未派发，立刻让出标签页，扩展那边最多再跑完当前这一段；中间段超时接着等，只有最后一段超时才带回现场。`chrome_wait_response`、`chrome_wait_download` 同样在检查点上看取消。
+
+等待或别的操作占着标签页时，新的写操作和截图报 `TAB_BUSY`、未派发，消息写明在跑什么、最多还要多久；只读的 `chrome_inspect`、`chrome_find` 不受影响。
 
 表达式等待可能有副作用。若每轮都执行完并返回假值，最后的 `WAIT_TIMEOUT` 按 `not_dispatched` 返回，不暂停写入；这只描述等待失败，不撤销此前表达式的副作用。表达式本身抛错按脚本执行规则处理。
 
@@ -367,6 +381,8 @@ contenteditable 编辑根未显式写 role 时按 `textbox` 处理，可用 `loc
 - 游标超出序列返回 `EVENT_CURSOR_INVALID`，所需历史已淘汰返回 `EVENT_HISTORY_LOST`。
 - 尚未确定下载时标签页关闭返回 `TAB_NOT_FOUND`；已经确定下载则继续等该下载完成。
 - 已开始但超时未完成时，用明确的 `downloadId` 继续等，不再次触发业务动作。
+
+页面在新窗口、子 frame 里开始的下载，或拿到接口结果后才打开的链接，常常配不上来源标签页。按标签页等下载时，等待期间同一个网站（同源，或主机名相同、互为子域）只有一笔这样的下载，就认它，结果带 `attribution:"inferred"` 和说明；有好几笔不替调用方挑。超时时 `detail.recentDownloads` 列出这段时间来源不明的下载（id、文件名、网址），消息不再说“没有开始新的下载”，请用 `chrome_downloads` 核对。
 
 Chrome 可能拦截同一页面第二次起的自动下载，工具看不到被拦的下载记录。按标签页等待超时后，只有确实存在或可能存在此前下载时才提示自动下载设置，并可带最近 3 条页面报错 `detail.console`。也可能是接口没给文件，或异步 `window.open` 被弹窗规则拦截；先核对网络和页面。
 
@@ -405,7 +421,9 @@ Chrome 可能拦截同一页面第二次起的自动下载，工具看不到被�
 | `checkVisibility` | 读取矩形和 `getComputedStyle`，自行判断所需条件 |
 | `matches` | `[...(el.parentNode||document).querySelectorAll(selector)].includes(el)` |
 | `closest` | 先取候选集合，再沿 `parentElement` 查找 |
-| `elementFromPoint` | 按 `getBoundingClientRect` 比较位置；这不等同浏览器命中测试 |
+| `elementFromPoint` | 用 `chrome_find` 的 `at` 按坐标查；或按 `getBoundingClientRect` 比较位置，这不等同浏览器命中测试 |
+| `localStorage.getItem('k')` | `localStorage['k']` |
+| `performance.getEntries*` | 没有能过检查的读法：看接口请求用 `chrome_wait_response` 或网络捕获；确实要读就去掉 `readOnly` |
 | 对象展开、`Object.fromEntries`、`Object.assign` | 循环给新对象赋值 |
 | `structuredClone` | 数据适用且内置函数未被替换时，可尝试 JSON 序列化复制；直接返回对象通常更简单 |
 
@@ -421,6 +439,8 @@ e?.getAttribute('data-state');
 这些建议不是所有 DOM 结构的完全等价替换。跨 Shadow DOM、脱离文档元素或精确命中测试有额外语义，须按实际页面核对。
 
 常见可用读取包括 `querySelectorAll`、`getAttribute`、`textContent`、`getBoundingClientRect`、`offsetWidth`、`offsetHeight`、`classList.contains`、数组转换和局部对象构造；实际仍以 Chrome 检查结果为准。
+
+Chrome 拦下时不给位置（行列号都是 -1，也没有调用栈），说不出是哪一段。改写表里没有对上的，消息列出表达式里常见只读写法以外的调用，告诉调用方可能是它们。纯读取也会被误拦：这时去掉 `readOnly` 照样能执行，只是按写操作记录，标签页要在本会话的组里。
 
 有的页面用 core-js 一类补丁替换 `JSON.stringify` 等内置函数，甚至替换 `Function.prototype.toString`。只读执行被拦后，扩展可通过调试器检查相关函数，消息点名替换项，结构化列表在 `detail.replacedBuiltins`。直接返回对象，不必序列化后再解析。
 
@@ -585,7 +605,15 @@ Chrome 的试跑中止不会进入页面 `catch/finally`。`Promise`、async 函
 
 `chrome_navigate.action` 为 `goto`（默认）、`back`、`forward`、`reload`。仅 goto 接受且必须提供 `url`。没有对应历史记录时未派发；导航途中超时仍须检查实际页面。`chrome_close_tab` 关闭已不存在的标签页返回 `closed:true, alreadyClosed:true`。
 
-`chrome_navigate`、`chrome_close_tab` 可带 `beforeUnload:"accept"` 自动接受离开页面提示，实际接受时结果带 `beforeUnload:"accepted"`。省略则报 `DIALOG_OPEN`，由 `chrome_dialog` 回答：离开使原操作成功，留下使原操作失败，答完等待原命令收尾后返回，不要求额外恢复。
+`chrome_navigate`、`chrome_close_tab`、`chrome_action` 可带 `beforeUnload:"accept"` 自动接受离开页面提示，实际接受时结果带 `beforeUnload:"accepted"`。省略则报 `DIALOG_OPEN`，由 `chrome_dialog` 回答：离开使原操作成功，留下使原操作失败，答完等待原命令收尾后返回，不要求额外恢复。`chrome_action` 的授权只认 `beforeunload`、用一次就作废，动作期间和结束后约 5 秒内有效：页面常在点击返回后才问（先发请求，回来再跳转或关窗口）。动作的这项需要 `interaction-v11`（0.3.32 起）。
+
+答完“离开”后标签页随之关掉时，`chrome_dialog` 和带 `beforeUnload` 的动作结果带 `tabClosed:true`，别再用这个 `tabId`。
+
+`chrome_close_tab` 先连上标签页再关，才看得到“确定离开吗”。关之前页面已经开着弹窗（点了“退出”、框在动作返回后才弹）：带 `beforeUnload:"accept"` 且是 `beforeunload` 就先答离开再关；不带或是别的弹窗，立刻返回 `DIALOG_OPEN`、未派发，不再一直等那个没人答的框。Chrome 的 `tabs.remove` 赶上页面正在跳转（答完离开、新文档还没提交）时会一直不返回，扩展约 0.6 秒没回音又看标签页还在就再关一次；开着弹窗时不重关。
+
+命令被弹窗打断、调用方已经拿到 `DIALOG_OPEN` 后，被挡住的那次调用还挂着；到期时看门狗不再拆掉这个标签页的调试连接，过了期限再用 `chrome_dialog` 答也答得上。
+
+`DIALOG_NOT_OPEN` 说明是哪种情况：这个标签页还没弹过框（动作刚返回时页面可能还没弹）、这个弹窗已经关了（写明答的是离开还是留下，可能是 `beforeUnload:"accept"` 自动答的，也可能是用户点的）、标签页已关、调试连接断过；仍是未派发。
 
 ## 权限、路径与离线诊断
 
@@ -695,8 +723,9 @@ Agent 的文件访问许可应由它自己的 harness 管理。SaltedFish 不另
 | `interaction-v9` | 0.3.24 | `textMatches`、单步动作 `postcondition`；用到才检查 |
 | `init-script-v1` | 0.3.25 | 导航、新标签页 `initScript`；缺失则拒绝，连新空白标签页也不开 |
 | `interaction-v10` | 0.3.26 | 所有位置的 `locator.inside`、查找 `selector` 简写、`state:"attached"`；用到才检查 |
+| `interaction-v11` | 0.3.32 | `chrome_action` 的 `beforeUnload`、`chrome_find` 的 `at` 和 `cell`；用到才检查。这是扩展声明的第 30 个能力，服务握手最多收 30 个，之后的新语义要并进已有能力 |
 
-页面动作的必需能力缺失时，服务在派发前返回 `EXTENSION_UPDATE_REQUIRED`，不让旧扩展忽略参数后执行错误语义。并非每个新增结果字段都有门控：`context`、编辑器 `within`、`type.value`、`toViewport`、`fixed`、`hit`、`scrolled`、上传 `input` 在旧扩展中可能只是缺失。0.3.29 的几项行为也不加能力号、旧扩展照旧执行：按需滚动（旧扩展每次都滚到正中）、按元素点击带 `hit`、上传点击确定文件框、属性超时的实际值、`exact:false` 提示。不要据字段缺失推断页面没有该状态。
+页面动作的必需能力缺失时，服务在派发前返回 `EXTENSION_UPDATE_REQUIRED`，不让旧扩展忽略参数后执行错误语义。并非每个新增结果字段都有门控：`context`、编辑器 `within`、`type.value`、`toViewport`、`fixed`、`hit`、`scrolled`、上传 `input` 在旧扩展中可能只是缺失。0.3.32 的按住复核、`openedTabs`、`tabClosed`、`redactedBy`、`updated[].class`、遮挡层控件、后台滚动出帧、关标签页重试和看门狗不拆弹窗连接同样不单独门控，旧扩展只是没有这些行为。0.3.29 的几项行为也不加能力号、旧扩展照旧执行：按需滚动（旧扩展每次都滚到正中）、按元素点击带 `hit`、上传点击确定文件框、属性超时的实际值、`exact:false` 提示。不要据字段缺失推断页面没有该状态。
 
 扩展也检查服务的 `execution-v3`、`interaction-v4`、`interaction-v5`、`admin-origin-v1`，缺失返回 `SERVICE_UPDATE_REQUIRED`、拒绝执行。服务仍公布的 `execution-v2` 是协议遗留声明，不是当前执行要求。连接采用 v2 双向挑战应答，配对密钥只作 HMAC 密钥，不在握手线上明文发送；握手完成前不执行命令。
 

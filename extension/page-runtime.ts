@@ -260,14 +260,21 @@ export function assertShown(element:Element,code='ELEMENT_NOT_VISIBLE',reason?:s
   if(!reason&&visibility(element).visible)return;
   notVisible(element,code,reason);
 }
-function sensitive(element:Element,accessibleName:string) {
+// 为什么不给值（结果里的 redactedBy）：marked 页面标了 data-mcp-sensitive，password 密码框，autocomplete 自动填充属性说它是密码、验证码或卡号，name 名字或标签里有敏感词。
+// autocomplete="new-password" 只在密码框上算：很多系统给所有输入框都写它来关掉 Chrome 的自动填充（11-26 反馈：编码、名称、创建人都被藏了）。
+function sensitiveReason(element:Element,accessibleName:string):'marked'|'password'|'autocomplete'|'name'|undefined {
   const input=element as HTMLInputElement;
-  for(let node:Element|null=element;node;node=parent(node))if(node.hasAttribute('data-mcp-sensitive'))return true;
-  return input.type==='password'||/^(?:current-password|new-password|one-time-code|cc-)/i.test(element.getAttribute('autocomplete')||'')||SENSITIVE_FIELD.test([input.name,input.id,element.getAttribute('aria-label'),accessibleName].filter(Boolean).join(' '));
+  for(let node:Element|null=element;node;node=parent(node))if(node.hasAttribute('data-mcp-sensitive'))return 'marked';
+  if(input.type==='password')return 'password';
+  if(/^(?:current-password|one-time-code|cc-)/i.test(element.getAttribute('autocomplete')||''))return 'autocomplete';
+  if(SENSITIVE_FIELD.test([input.name,input.id,element.getAttribute('aria-label'),accessibleName].filter(Boolean).join(' ')))return 'name';
+  return undefined;
 }
+const sensitive=(element:Element,accessibleName:string)=>sensitiveReason(element,accessibleName)!==undefined;
+const redacted=(reason:string)=>({valueRedacted:true,redactedBy:reason});
 // type 之后读回字段现在的内容：富文本编辑器会改写输入（比如把“#话题”变成正式话题），调用方看这个就知道写成了什么。截到 256 字，密码类不回。
 export function fieldValue(element:Element):any {
- if(sensitive(element,normalize(computeAccessibleName(element))))return {valueRedacted:true};
+ const reason=sensitiveReason(element,normalize(computeAccessibleName(element)));if(reason)return redacted(reason);
  const value=editableValue(element);
  return value.length>256?{value:value.slice(0,256),valueTruncated:true,valueLength:value.length}:{value};
 }
@@ -300,6 +307,41 @@ function contextText(element:Element):string|undefined {
 }
 // 容器里可操作的子元素（只数看得见的，最多数到 100）。
 function innerControls(element:Element){let count=0;for(const child of element.querySelectorAll(CONTROL_SELECTOR)){if(visibility(child).visible&&++count>=100)break;}return count;}
+// find 的 at：落点上的元素和它往上几层（最多 5 个），最贴近的在前。在隔离世界里查，页面看不到；evaluate 里用 elementFromPoint 在只读模式下会被拦（11-26 反馈）。
+function pointChain(x:number,y:number){
+  const chain:Element[]=[];
+  for(let node:Element|null=deepHit(x,y);node&&chain.length<5&&node!==document.documentElement;node=parent(node))chain.push(node);
+  return chain;
+}
+// find 的 cell：行里含 row 这段文字、列头是 column 的那一格。原生 table、role=grid/row/cell 都认；表头和表体分成两张表的（固定表头、冻结列），
+// 按列头的水平位置对齐：在行里取横向和列头重叠最多的那一格。只按文字节点找，不逐个元素算 innerText，大表格也快。
+// 只渲染看得见那几行的表格（虚拟滚动）里，没出来的行找不到，结果里说明，由调用方自己滚（滚动是写动作，不替它做）。
+const CELL='td,th,[role=cell],[role=gridcell],[role=rowheader],[role=columnheader]',ROW='tr,[role=row]';
+function findCells(spec:{row?:string;column:string},inScope:(element:Element)=>boolean){
+  const headers=new Set<Element>(),rows=new Set<Element>();
+  const walker=document.createTreeWalker(document.body||document.documentElement,NodeFilter.SHOW_TEXT);let node:Node|null;
+  while((node=walker.nextNode())){
+    const parentElement=node.parentElement;if(!parentElement)continue;
+    const text=normalize(node.nodeValue);if(!text)continue;
+    if(fold(text)===fold(spec.column)){const header=parentElement.closest(CELL)??parentElement;if(inScope(header)&&visibility(header).visible)headers.add(header);}
+    const row=parentElement.closest(ROW);
+    if(row&&inScope(row)&&(spec.row===undefined||fold(text).includes(fold(spec.row))))rows.add(row);
+  }
+  if(!headers.size)return {cells:[] as Element[],why:`没找到写着「${spec.column}」的列头。`};
+  const cells:Element[]=[];
+  for(const row of rows){
+    if([...headers].some(header=>row.contains(header))||!visibility(row).visible)continue;// 表头那一行本身
+    const rowBox=row.getBoundingClientRect();let best:Element|undefined,most=0;
+    for(const cell of row.querySelectorAll(CELL)){
+      if(cell.closest(ROW)!==row)continue;// 嵌在格子里的子表格
+      const box=cell.getBoundingClientRect();if(!box.width)continue;
+      for(const header of headers){const head=header.getBoundingClientRect();if(head.top>rowBox.top)continue;const overlap=Math.min(box.right,head.right)-Math.max(box.left,head.left);if(overlap>most){most=overlap;best=cell;}}
+    }
+    if(best&&!cells.includes(best))cells.push(best);
+  }
+  const why=cells.length?undefined:rows.size?'找到了行和列头，但没有位置对得上的格子。':spec.row!==undefined?`没找到含「${spec.row}」的行；表格要是只渲染看得见的几行（虚拟滚动），先滚到那一行再找。`:'没找到表格的行。';
+  return {cells,why};
+}
 export function pageDom(options:any):any {
   const state=pageState(),all:Element[]=[];
   if(options.mode==='resolve'&&options.ref){const element=state.elements.get(options.ref);if(!element||!element.isConnected||element.ownerDocument!==document)fail('STALE_ELEMENT_REF','元素引用已失效，请重新 inspect。');return element;}
@@ -330,8 +372,8 @@ export function pageDom(options:any):any {
     // 默认值不输出：一次任务要读十几次页面，每个元素都带 visible:true、disabled:false 很贵。没写就是可见、可用、可写。
     const fullName=name(element),{visible,disabled,readOnly,...look}=elementState(element),roleName=role(element),typeName=element.getAttribute('type');
     const result:any={ref:remember(element,state),tag:element.tagName.toLowerCase(),...(roleName?{role:roleName}:{}),name:fullName.slice(0,180),...(fullName.length>180?{nameTruncated:true}:{}),...(typeName?{type:typeName}:{}),...(visible?{}:{visible:false}),...(disabled?{disabled:true}:{}),...(readOnly?{readOnly:true}:{}),...look};
-    const limited=(value:string)=>value.slice(0,valueLimit),hidden=sensitive(element,fullName);
-    if(hidden)result.valueRedacted=true;
+    const limited=(value:string)=>value.slice(0,valueLimit),hidden=sensitiveReason(element,fullName);
+    if(hidden)Object.assign(result,redacted(hidden));
     else if(element instanceof HTMLInputElement&&element.type==='file'){const files=[...(element.files||[])].slice(0,10);result.fileCount=element.files?.length||0;result.fileNames=files.map(file=>limited(file.name));result.fileSizes=files.map(file=>file.size);}
     else if(element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement){result.value=limited(element.value);if(element.value.length>valueLimit){result.valueTruncated=true;result.valueLength=element.value.length;}}
     else if(element instanceof HTMLSelectElement){result.value=limited(element.value);result.selectedIndex=element.selectedIndex;if(element.multiple)result.multiple=true;result.selectedOptions=[...element.selectedOptions].slice(0,20).map(o=>({value:limited(o.value),label:limited(o.label),selected:true,disabled:o.disabled||o.parentElement instanceof HTMLOptGroupElement&&o.parentElement.disabled}));result.totalSelected=element.selectedOptions.length;}
@@ -353,9 +395,16 @@ export function pageDom(options:any):any {
     if(matches.length>1){const {listed,text}=candidateList(matches);fail('AMBIGUOUS_SCOPE',`范围匹配 ${matches.length} 个元素：${text}。用其中一个 ref 作 scopeRef。`,{candidates:listed,total:matches.length});}
     if(!matches.length)fail('SCOPE_NOT_FOUND','未找到观察范围。');scope=matches[0];}
   const candidates=scope?all.filter(e=>{for(let node:Element|null=e;node;node=parent(node))if(node===scope)return true;return false;}):all;
-  let found:Element[],nthOf:number|undefined,insideRoots:Set<Element>|undefined;
+  let found:Element[],nthOf:number|undefined,insideRoots:Set<Element>|undefined,cellNote:string|undefined;
   if(options.ref){const element=state.elements.get(options.ref);if(!element||!element.isConnected||element.ownerDocument!==document)fail('STALE_ELEMENT_REF','元素引用已失效，请重新 inspect。');found=[element];}
   else if(options.selector){try{found=candidates.filter(e=>e.matches(options.selector));}catch{fail('INVALID_SELECTOR','CSS 选择器无效。');}}
+  else if(options.at){const inside=scope?new Set(candidates):undefined;found=pointChain(Number(options.at.x),Number(options.at.y)).filter(e=>!inside||inside.has(e));}
+  else if(options.cell){
+    // locator.inside（chrome_find 的 selector 换过来的）在这里当范围：只找这些表格里的格子。
+    let roots:Element[]|undefined;if(options.locator?.inside!==undefined){try{roots=all.filter(e=>e.matches(options.locator.inside));}catch{fail('INVALID_SELECTOR','locator.inside 的 CSS 选择器无效。');}}
+    const inside=scope?new Set(candidates):undefined,inScope=(e:Element)=>(!inside||inside.has(e))&&(!roots||roots.some(root=>root.contains(e)));
+    const match=findCells(options.cell,inScope);found=match.cells;cellNote=match.why;
+  }
   else if(options.locator){const q=options.locator,matches=(value:unknown,expected:unknown)=>expected===undefined||(q.exact===false?fold(value).toLowerCase().includes(fold(expected).toLowerCase()):fold(value)===fold(expected));
     // inside：只找在这些元素里面（含它们本身）的，可以匹配多个，比如每个候选各一个容器。先按它筛，后面算可见、名称的元素就少了。
     if(q.inside!==undefined){try{insideRoots=new Set(all.filter(e=>e.matches(q.inside)));}catch{fail('INVALID_SELECTOR','locator.inside 的 CSS 选择器无效。');}}
@@ -385,7 +434,7 @@ export function pageDom(options:any):any {
     if(!found.length)fail('ELEMENT_NOT_FOUND',insideRoots?.size===0?'未找到目标元素：locator.inside 没匹配到任何元素。':'未找到目标元素。');remember(found[0]!,state);return found[0];
   }
   const offset=Number(options.offset||0),limit=Number(options.limit||50),elements=found.slice(offset,offset+limit).map(metadata);
-  const result:any={documentId:state.id,elements,totalElements:found.length,nextOffset:offset+limit<found.length?offset+limit:null,...(nthOf!==undefined?{matchedBeforeNth:nthOf}:{}),...(insideRoots?.size===0?{insideMatched:0}:{})};
+  const result:any={documentId:state.id,elements,totalElements:found.length,nextOffset:offset+limit<found.length?offset+limit:null,...(nthOf!==undefined?{matchedBeforeNth:nthOf}:{}),...(insideRoots?.size===0?{insideMatched:0}:{}),...(cellNote?{note:cellNote}:{})};
   if(options.mode==='find')return result;
   const text=scope?(scope instanceof HTMLElement?scope.innerText:scope.textContent||''):document.body?.innerText||'',textLimit=Number(options.textLimit??12000);
   Object.assign(result,{title:document.title,url:location.href,text:text.slice(0,textLimit),textLength:text.length,textTruncated:text.length>textLimit,frames:candidates.filter(e=>e instanceof HTMLIFrameElement).map(e=>({src:(e as HTMLIFrameElement).src,name:(e as HTMLIFrameElement).name,title:(e as HTMLIFrameElement).title}))});
@@ -403,7 +452,10 @@ export function pageDom(options:any):any {
 const CONTROLS=`${CONTROL_SELECTOR},iframe`;
 const CHANGE_BYTES=600,TEXT_BYTES=200,LINE_CHARS=100,VALUE_CHARS=60,MAX_LINES=5000,MAX_CONTROLS=6;
 type ControlState=Record<string,unknown>;
-interface PageWatch {url:string;title:string;lines:Set<string>;controls:WeakMap<Element,ControlState>;observer:MutationObserver;touched:number}
+// texty：动作之后第一次出现带文字的新节点或文字变化的时间；attributes：属性变过的元素和变之前的值（只记第一次的旧值）。
+interface PageWatch {url:string;title:string;lines:Set<string>;controls:WeakMap<Element,ControlState>;observer:MutationObserver;touched:number;texty:number;attributes:Map<Element,Map<string,string|null>>}
+// 只看这几个属性：自绘开关、展开、选中常常只改 class 或 aria，文字和控件比对看不出来（11-26 反馈：只改 class 的开关报 changed:false，实际已切换）。
+const WATCHED_ATTRIBUTES=['class','aria-checked','aria-pressed','aria-expanded','aria-selected','checked','data-state'],STATE_ATTRIBUTES=new Set(WATCHED_ATTRIBUTES.slice(1)),MAX_ATTRIBUTE_TARGETS=300;
 let watching:PageWatch|undefined;
 // 按文字节点比，不按 innerText 的行：行内元素共用一行，新增一个词会让整行都算新文字。
 function textLines() {
@@ -434,13 +486,48 @@ function controlState(element:Element):ControlState {
 export function watchPage() {
   watching?.observer.disconnect();
   const controls=new WeakMap<Element,ControlState>();for(const element of visibleControls())controls.set(element,controlState(element));
-  const current:PageWatch={url:location.href,title:document.title,lines:new Set(textLines()),controls,touched:0,observer:new MutationObserver(()=>{current.touched=Date.now();})};
-  current.observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
+  const current:PageWatch={url:location.href,title:document.title,lines:new Set(textLines()),controls,touched:0,texty:0,attributes:new Map(),observer:new MutationObserver(records=>{
+    current.touched=Date.now();
+    for(const record of records){
+      if(record.type==='attributes'){
+        const element=record.target as Element,name=record.attributeName!;let seen=current.attributes.get(element);
+        if(!seen){if(current.attributes.size>=MAX_ATTRIBUTE_TARGETS)continue;seen=new Map();current.attributes.set(element,seen);}
+        if(!seen.has(name))seen.set(name,record.oldValue);
+      }else if(!current.texty&&(record.type==='characterData'?normalize(record.target.nodeValue):[...record.addedNodes].some(node=>normalize(node.textContent))))current.texty=Date.now();
+    }
+  })};
+  current.observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeOldValue:true,attributeFilter:WATCHED_ATTRIBUTES});
   watching=current;return true;
 }
 // 页面已经安静了多久。-1 表示动作之后还没有任何变化；null 表示这个文档没有在观察（已经换了文档）。
 export const pageQuietFor=()=>watching?(watching.touched?Date.now()-watching.touched:-1):null;
-export function pageChanges() {
+// 落点（点击的视口坐标）附近的元素：落点上的元素往上 4 层，以及它里面不大的子树。只算这些元素的 class 变化，页面别处的动画、加载样式不算。
+function nearPoint(point:{x:number;y:number}|undefined){
+  const near=new Set<Element>();if(!point)return near;
+  const anchor=deepHit(point.x,point.y);if(!anchor)return near;
+  for(let node:Element|null=anchor,depth=0;node&&depth<5&&node!==document.body&&node!==document.documentElement;node=parent(node),depth++)near.add(node);
+  const inside=anchor.querySelectorAll('*');if(inside.length<=50)for(const element of inside)near.add(element);
+  return near;
+}
+// 动作之后的动静：quiet 同 pageQuietFor；readable 表示已经有读得出的变化（带文字的新内容、控件状态属性、落点附近的 class）。
+// 有动静却还读不出（只出了遮罩、loading），说明请求还在路上，executor 会多等一会儿再收口。
+export function pageActivity(point?:{x:number;y:number}){
+  const current=watching;if(!current)return null;
+  const quiet=current.touched?Date.now()-current.touched:-1;
+  if(current.texty)return {quiet,readable:true};
+  let near:Set<Element>|undefined;
+  for(const [element,changes] of current.attributes){
+    if([...changes.keys()].some(name=>STATE_ATTRIBUTES.has(name)))return {quiet,readable:true};
+    if(changes.has('class')&&changes.get('class')!==element.getAttribute('class')&&(near??=nearPoint(point)).has(element))return {quiet,readable:true};
+  }
+  return {quiet,readable:false};
+}
+// class 变化写成 "+open -closed"；一样的不写。
+function classDiff(before:string|null|undefined,after:string|null){
+  const was=new Set((before||'').split(/\s+/).filter(Boolean)),now=new Set((after||'').split(/\s+/).filter(Boolean));
+  return [...[...now].filter(name=>!was.has(name)).map(name=>`+${name}`),...[...was].filter(name=>!now.has(name)).map(name=>`-${name}`)].join(' ').slice(0,VALUE_CHARS);
+}
+export function pageChanges(point?:{x:number;y:number}) {
   const before=watching;if(!before)return null;
   before.observer.disconnect();watching=undefined;
   const state=pageState(),now=textLines(),after=new Set(now),controls=visibleControls();
@@ -453,11 +540,23 @@ export function pageChanges() {
     if(updated.length>=MAX_CONTROLS){moreUpdated++;continue;}
     const fullName=label(element),item:any={ref:remember(element,state),name:fullName.slice(0,VALUE_CHARS)};
     for(const key of changes){
-      if(key==='value'&&sensitive(element,fullName))item.valueRedacted=true;
+      if(key==='value'&&sensitive(element,fullName))Object.assign(item,redacted(sensitiveReason(element,fullName)!));
       else if(key==='value')item.value=String(current.value??'').slice(0,VALUE_CHARS);
       else if(key!=='text'||current.text!==item.name)item[key]=current[key]??null;
     }
     updated.push(item);
+  }
+  // 落点附近只改了 class（自绘开关、折叠面板）或 aria 状态的元素：已经作为控件报过的合并进去，其余单列。
+  const near=nearPoint(point);
+  for(const [element,changes] of before.attributes){
+    if(!element.isConnected||!near.has(element))continue;
+    const diff=changes.has('class')?classDiff(changes.get('class'),element.getAttribute('class')):'';
+    const states=[...changes.keys()].filter(name=>STATE_ATTRIBUTES.has(name)&&changes.get(name)!==element.getAttribute(name));
+    if(!diff&&!states.length)continue;
+    const ref=remember(element,state);let item=updated.find(entry=>entry.ref===ref);
+    if(!item){if(updated.length>=MAX_CONTROLS){moreUpdated++;continue;}item={ref,name:label(element).slice(0,VALUE_CHARS)};updated.push(item);}
+    if(diff)item.class=diff;
+    for(const name of states)if(!(name.replace(/^aria-/,'') in item))item[name]=element.getAttribute(name);
   }
   const names=fresh.slice(0,MAX_CONTROLS).map(element=>label(element).slice(0,VALUE_CHARS)),seen=new Set([...names,...updated.flatMap(item=>[item.name,item.text])]);
   const lines=[...new Set(now.filter(line=>!before.lines.has(line)&&!seen.has(line)))],removed=[...before.lines].filter(line=>!after.has(line)).length;
@@ -509,6 +608,26 @@ export function pointTarget(x:number,y:number){
  const hit=deepHit(x,y);if(!hit)return null;
  const {ref,selector,role,name}=describe(hit),text=name?'':normalize((hit as HTMLElement).innerText??hit.textContent);
  return {ref,selector,...(role?{role}:{}),...(name?{name}:{}),...(text&&text.length<=40?{text}:{})};
+}
+// 按住期间的复核（executor 的 click）：按下的那个点上现在还是不是这个控件。算同一个的：目标本身和它里面的元素、label 和它的控件，
+// 以及目标所属的那个控件里的任何部分（开关里的滑块按下就滑走，落点落到开关的轨道上）。所属控件取往上最近的按钮、链接、表单控件、label
+// 或 role=switch/checkbox/option/menuitem/tab 这类；一般的容器、背景不算：按钮按下就挪开时，松开落在背景上，按钮收不到点击，click 还会落到公共祖先上
+// （可能触发“点外面就关”），所以取消。输入框聚焦后变样式、按下时下移一两像素，落点仍在它上面，照常松开。目标在按住期间看不见了也取消。
+const CONTROL_ROOT='button,a[href],input,select,textarea,summary,label,[role=button],[role=switch],[role=checkbox],[role=radio],[role=option],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=tab],[role=link],[role=treeitem]';
+// visible 由调用方传入（elementExpression 已经按统一规则算好的 state.visible）。
+export function pressCheck(element:Element,x:number,y:number,visible=true){
+  if(!element.isConnected)return {documentId:documentId(),related:false,reason:'gone'};
+  if(!visible)return {documentId:documentId(),related:false,reason:'hidden'};
+  const root=element.getRootNode() as Document|ShadowRoot;
+  const hit=root.elementFromPoint?root.elementFromPoint(x,y):null;
+  const within=(outer:Element,inner:Element)=>{for(let node:Element|null=inner;node;node=parent(node))if(node===outer)return true;return false;};
+  const control=element.closest(CONTROL_ROOT)??element;
+  if(hit&&(within(element,hit)||within(control,hit)||sameControl(element,hit)))return {documentId:documentId(),related:true};
+  if(!hit)return {documentId:documentId(),related:false,reason:'moved'};
+  // 只是给报错用的说明，读不出就只写标签名。
+  let about:{selector:string;role?:string;name?:string};
+  try{const {selector,role,name}=describe(hit);about={selector,...(role?{role}:{}),...(name?{name:name.slice(0,40)}:{})};}catch{about={selector:hit.tagName.toLowerCase()};}
+  return {documentId:documentId(),related:false,reason:within(hit,element)?'moved':'replaced',hit:about};
 }
 // 截图超出视口时（整页、长元素、clip），固定在屏幕上的元素是按截图时的位置画进图里的：页面滚过以后，整页图的顶栏出现在中间。
 // 在视口里按 7×7 的网格取点，看最上面那个元素往上有没有固定定位或已经粘住的粘性元素，算出它们在图片里的位置，最多 3 个。
@@ -597,6 +716,29 @@ function needsScroll(element:Element){
   if(!inside&&!(big&&centred))return true;
   return !!hitAt(element,cx,cy);
 }
+// 挡住目标的那一层里能点的东西（“我知道了”“关闭”）：报错里带上 ref，下一步直接点。层取挡住的元素往上最近的对话框，或最外面一层固定定位的祖先；
+// 层里没有就看它的父元素（遮罩和弹窗壳常是兄弟）。没写 role 的自绘按钮按“鼠标是手形、字很短”认。加载遮罩一般什么都没有，executor 就照旧等它消失。
+function layerControls(blocker:Element){
+  let layer:Element=blocker;
+  for(let node:Element|null=blocker,depth=0;node&&depth<8&&node!==document.body&&node!==document.documentElement;node=parent(node),depth++){
+    if(node.matches('[role=dialog],[role=alertdialog],[aria-modal=true],dialog')){layer=node;break;}
+    if(getComputedStyle(node).position==='fixed')layer=node;
+  }
+  const found=(root:Element)=>{
+    const picked=new Set<Element>();
+    for(const element of root.querySelectorAll(`${CONTROL_SELECTOR},[onclick]`))if(picked.size<5&&visibility(element).visible)picked.add(element);
+    for(const element of [...root.querySelectorAll('*')].slice(0,300)){
+      if(picked.size>=5)break;
+      const text=normalize((element as HTMLElement).innerText??element.textContent);
+      if(text&&text.length<=10&&element.childElementCount<=2&&![...picked].some(item=>item.contains(element)||element.contains(item))&&getComputedStyle(element).cursor==='pointer'&&visibility(element).visible)picked.add(element);
+    }
+    return [...picked];
+  };
+  let controls=found(layer);const above=layer.parentElement;
+  if(!controls.length&&above&&above!==document.body&&above!==document.documentElement)controls=found(above);
+  const state=pageState();
+  return controls.map(element=>{const role=roleOf(element),name=normalize(computeAccessibleName(element)||(element as HTMLElement).innerText||element.textContent).slice(0,40);return {ref:remember(element,state),...(role?{role}:{}),...(name?{name}:{})};});
+}
 export function actionPoint(element:Element,state:{visible:boolean;disabled:boolean},options:{action:string;scroll:boolean;ignoredRef?:string;aim?:[number,number]}){
   if(state.disabled&&['click','doubleClick','drag','setChecked'].includes(options.action))fail('ELEMENT_DISABLED');
   if(!state.visible)notVisible(element);
@@ -629,7 +771,8 @@ export function actionPoint(element:Element,state:{visible:boolean;disabled:bool
       const cover=describe(blocker),control=element.closest('label')?.control;
       // 点的是单选、复选框的文字：setChecked 直接点那个 input，不经过文字。点的就是 input 本身时这条建议没用。
       const hint=control instanceof HTMLInputElement&&control!==element&&['checkbox','radio'].includes(control.type)?`它属于${control.type==='radio'?'单选框':'复选框'}，改用 setChecked 定位那个 input（ref ${remember(control,pageState())}）。`:'先关掉挡住它的弹层或提示，或者点挡住它的那个元素（如果那才是要点的）。';
-      return {message:`目标被 ${cover.selector}${shortName(blocker)} 挡住了，没有点击。${hint}`,detail:{cover}};
+      const controls=layerControls(blocker);
+      return {message:`目标被 ${cover.selector}${shortName(blocker)} 挡住了，没有点击。${hint}`,detail:{cover:{...cover,...(controls.length?{controls}:{})}}};
     });
   }
   // 偏离中心时另带中心：核对“目标没动”比的是中心，悬停放大一类效果不会被当成移动。

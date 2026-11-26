@@ -1,8 +1,11 @@
 import type { JsonObject } from '../src/shared';
-import { changesExpression, quietExpression, watchExpression } from './page-functions';
+import { activityExpression, changesExpression, watchExpression } from './page-functions';
 
 export const ACTION_SETTLE_MS = 300, INPUT_SETTLE_MS = 50;
-const QUIET_MS = 100, IDLE_POLL_MS = 150, MAX_WAIT_MS = 800, READ_LIMIT_MS = 1000;
+// 点击后有动静却还读不出变化（只出了遮罩、loading）：请求多半还在路上，多看一会儿，最多 BUSY_WAIT_MS。
+// 服务端驱动的页面点“保存”后先出遮罩、请求回来才出“保存成功”，一两秒后又消失（11-26 反馈：300～480ms 就收口，提示接不住）。
+const QUIET_MS = 100, IDLE_POLL_MS = 150, MAX_WAIT_MS = 800, BUSY_WAIT_MS = 2000, READ_LIMIT_MS = 1000;
+type Point = { x: number; y: number };
 interface TabView { url?: string; pendingUrl?: string; title?: string; status?: string }
 interface PageChangeDeps {
   evaluate: (tabId: number, expression: string, frame: JsonObject, deadline: number) => Promise<unknown>;
@@ -29,22 +32,25 @@ export class PageChanges {
     this.watching.delete(tabId);
     void this.call(tabId, changesExpression(), frame, Date.now() + READ_LIMIT_MS).catch(() => {});
   }
-  async read(tabId: number, settleMs: number, deadline: number): Promise<{ pageChange?: JsonObject }> {
+  // point 是点击落点（主 frame 的视口坐标）：落点附近元素的 class 变化算读得出的变化，也写进结果。
+  async read(tabId: number, settleMs: number, deadline: number, point?: Point): Promise<{ pageChange?: JsonObject }> {
     const frame = this.watching.get(tabId); if (!frame) return {};
     this.watching.delete(tabId);
-    const started = Date.now(), until = Math.min(deadline - 100, started + MAX_WAIT_MS);
+    const started = Date.now(), limit = (ms: number) => Math.min(deadline - 100, started + ms), click = settleMs >= ACTION_SETTLE_MS;
     let changes: JsonObject | null | undefined;
     try {
-      await this.deps.sleep(Math.max(0, Math.min(settleMs, until - Date.now())));
+      await this.deps.sleep(Math.max(0, Math.min(settleMs, limit(MAX_WAIT_MS) - Date.now())));
       for (;;) {
-        const quiet = await this.call(tabId, quietExpression(), frame, deadline) as number | null, left = until - Date.now();
-        if (quiet === null || left <= 0) break;
+        const activity = await this.call(tabId, activityExpression(point), frame, deadline) as { quiet: number; readable: boolean } | null;
+        if (activity === null) break;
+        const { quiet, readable } = activity, busy = click && quiet !== -1 && !readable, left = limit(busy ? BUSY_WAIT_MS : MAX_WAIT_MS) - Date.now();
+        if (left <= 0) break;
         // 点击后完全没动静：可能在等接口，继续看到上限。输入类动作没有这个问题。
-        if (quiet === -1) { if (settleMs < ACTION_SETTLE_MS) break; await this.deps.sleep(Math.min(IDLE_POLL_MS, left)); continue; }
-        if (quiet >= QUIET_MS) break;
-        await this.deps.sleep(Math.min(QUIET_MS - quiet, left));
+        if (quiet === -1) { if (!click) break; await this.deps.sleep(Math.min(IDLE_POLL_MS, left)); continue; }
+        if (quiet >= QUIET_MS && !busy) break;
+        await this.deps.sleep(busy ? Math.min(IDLE_POLL_MS, left) : Math.min(QUIET_MS - quiet, left));
       }
-      changes = await this.call(tabId, changesExpression(), frame, deadline) as JsonObject | null;
+      changes = await this.call(tabId, changesExpression(point), frame, deadline) as JsonObject | null;
     } catch { changes = undefined; } // 页面正在跳转，或暂时读不到。
     const tab = await this.deps.tab(tabId, frame).catch(() => undefined);
     const loading = tab?.status === 'loading', url = (tab?.pendingUrl || tab?.url)?.slice(0, 200);

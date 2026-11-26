@@ -17,7 +17,7 @@ test('doubleClick emits two trusted-protocol click pairs with clickCount 1/2 and
 test('doubleClick stops before second press if the first click replaces the target',async t=>{
  const {tabId,page}=h.openTab(),field=page.element('target');
  h.hooks.intercept=command=>{if(command.tabId===tabId&&command.method==='Input.dispatchMouseEvent'&&command.params.type==='mouseReleased')field.isConnected=false;};t.after(()=>{h.hooks.intercept=undefined;});
- const error=await failure(run(tabId,{action:'doubleClick',selector:'#target'}));assert.equal(error.outcome,'unknown');
+ const error=await failure(run(tabId,{action:'doubleClick',selector:'#target'}));assert.equal(error.outcome,'dispatched','第一次点击已经完成，结果是确定的：不暂停写入，但不要整个重做');
  assert.equal(page.mouseEvents.filter(e=>e.type==='mousePressed').length,1);
 });
 test('drag follows bounded pointer steps, keeps button pressed, and releases at the target',async()=>{

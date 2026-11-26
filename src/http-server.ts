@@ -277,7 +277,10 @@ export async function startServer(config: Config, options: { setup?: SetupOption
         const input = Invocation.parse(await body(request)), owner = `${principal.id}:${input.owner}`, sessionId = stdioSessionId(input.owner);
         // 达到会话上限就按没有会话处理，和登记失败时一样。
         if (sessionId) try { service.presence.touch(principal, { sessionId, owner }); } catch { /* 不影响调用。 */ }
-        return json(response, 200, await service.invoke(input.name, input.args, owner, principal));
+        // stdio 转发的调用被客户端取消时，转发方会断开这个请求：等待类工具据此收手、让出标签页（service.ts 的 slicedWait）。
+        const cancelled = new AbortController();
+        response.on('close', () => { if (!response.writableFinished) cancelled.abort(); });
+        return json(response, 200, await service.invoke(input.name, input.args, owner, principal, undefined, Infinity, cancelled.signal));
       }
       return json(response, 404, { error: 'NOT_FOUND' });
     } catch (error) { if (!response.headersSent) json(response, 400, { ok: false, error: errorInfo(error) }); else response.end(); }

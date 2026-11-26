@@ -54,11 +54,6 @@ export async function dragPointer(options:DragOptions){
 }
 
 // 落点偏离中心时比中心：悬停放大、按下缩小这类效果会让偏离的落点挪一点，但元素没动。
-// 按住期间的复核用：按下样式（:active 时下移一两像素）不算挪走，列表重排、弹层盖上这种才算。
-export function nearPoint(expected:PointerPoint,current:PointerPoint,tolerance:number){
-  const a=expected.cx!==undefined&&expected.cy!==undefined?{x:expected.cx,y:expected.cy}:expected,b=current.cx!==undefined&&current.cy!==undefined?{x:current.cx,y:current.cy}:current;
-  return Math.abs(a.x-b.x)<=tolerance&&Math.abs(a.y-b.y)<=tolerance;
-}
 export function samePoint(expected:PointerPoint,current:PointerPoint){
   const a=expected.cx!==undefined&&expected.cy!==undefined?{x:expected.cx,y:expected.cy}:expected,b=current.cx!==undefined&&current.cy!==undefined?{x:current.cx,y:current.cy}:current;
   return Math.abs(a.x-b.x)<=1&&Math.abs(a.y-b.y)<=1;

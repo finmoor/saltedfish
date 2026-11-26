@@ -24,7 +24,8 @@ export async function framePoint(tabId: number,args: JsonObject,deadline: number
   // 本 frame 里的检查和落点在页面运行时里做（FengPage.actionPoint），每次只传参数。
   const local=await evaluate(tabId,elementExpression(args,`return FengPage.actionPoint(element,state,${JSON.stringify({action:String(args.action),scroll:args.scrollIntoView!==false,...(typeof args.dragSourceRef==='string'?{ignoredRef:args.dragSourceRef}:{}),...(Array.isArray(args.aim)?{aim:args.aim}:{})})});`),args,deadline) as Point & {cx?:number;cy?:number;width:number;height:number;documentId:string;ref:string;landedOn?:JsonObject;hit?:JsonObject;scrolled?:JsonObject};
   // 落点上的元素、点击前滚了多少，原样带回（iframe 里的是 iframe 里的元素和滚动）。
-  const extra={...(local.landedOn?{landedOn:local.landedOn}:{}),...(local.hit?{hit:local.hit}:{}),...(local.scrolled?{scrolled:local.scrolled}:{})};
+  // lx、ly 是目标所在 frame 里的落点：按住期间的复核在那个 frame 里看这一点上现在是什么（FengPage.pressCheck）。
+  const extra={...(local.landedOn?{landedOn:local.landedOn}:{}),...(local.hit?{hit:local.hit}:{}),...(local.scrolled?{scrolled:local.scrolled}:{}),lx:local.x,ly:local.y};
   const roots=new Map<string,{parentId?:string}>();
   const add=(tree:any,parentId?:string)=>{const old=roots.get(tree.frame.id);roots.set(tree.frame.id,{parentId:parentId||tree.frame.parentId||old?.parentId});for(const child of tree.childFrames||[])add(child,tree.frame.id);};
   const rootTree=await send(tabId,'Page.getFrameTree');add(rootTree.frameTree);const rootId=(rootTree.frameTree as any).frame.id;
